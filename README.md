@@ -1,6 +1,6 @@
 # National Parks Travel Cost with Mobile Device Data
 
-Jude Bayham, Kate Floersheim, Isabel Naschold, Leslie Richardson, Aaron Enriquez
+Jude Bayham, Kate Floersheim, Isa Naschold, Leslie Richardson, Aaron Enriquez
 
 The goal of this project is to assess the quality of mobile device data for conducting recreation demand research. We will investigate the reliability of the data and compare consumer surplus estimates using mobile device data to those of conventional surveys.
 

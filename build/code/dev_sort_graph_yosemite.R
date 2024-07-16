@@ -63,6 +63,21 @@ ggplot(data = falls_scatter, mapping = aes(x = visitors, y = observations)) +
 
 yosemite_2021 <- yosemite_data_both %>%
   filter(Year == 2021) %>%
-  select("Year", "month", "raw_visit_counts", "visitors","location_name") %>%
+  select("Year", "month","raw_visit_counts", "visitors","location_name") %>%
   str_pad(month,2,"left","0") %>% 
   mutate(measure_date=as_date(paste0(Year,"-",month,-,"01")))
+
+NPS_yosemite_2021 <- yosemite_data_both %>%
+  mutate(measure_date=as.Date(paste0(Year,"-",month,"-01"))) %>%
+  filter(park == "Yosemite", Year == 2021)
+
+ggplot() +
+  geom_line(data = yosemite_2021, aes(x = measure_date, y = visitors, color = "SafeGraph Data for POI")) +
+  geom_line(data = NPS_yosemite_2021, aes(x = measure_date, y = observations, color = "NPS Data"))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "SafeGraph Yosemite Visitation vs. NPS Yosemite Visitation, 2021", 
+       x = "Month", 
+       y = "Visitors") +
+  scale_color_manual(values = c("SafeGraph Data for POI" = "blue", "NPS Data" = "orange"),
+                     name = "Legend") +
+  facet_wrap(vars(location_name, Year))

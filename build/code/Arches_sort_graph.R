@@ -38,7 +38,6 @@ arches_data_both[is.na(arches_data_both)] <- 0
 #Scatter Plot (SafeGraph data scaled)
 tunnel_scatter_data <- arches_data_both %>%
   filter(location_name == "Tunnel Arch", Year %in% c("2019", "2020", "2021", "2022"))
-#the zero in this plot is from Dec 2022. Removed 2023 observations because they were zeros. Remove Dec 2022?
 #should this not use scaled SafeGraph data?
 
 ggplot(data = tunnel_scatter_data, mapping = aes(x = Visits, y = observations)) +
@@ -48,6 +47,18 @@ ggplot(data = tunnel_scatter_data, mapping = aes(x = Visits, y = observations)) 
 
 tunnel_equation <- lm(observations ~ Visits, data = tunnel_scatter_data)
 print(tunnel_equation)
+
+total_scatter_data <- arches_data_both %>%
+  filter(placekey == "zzy-222@5qg-8sr-mtv", Year %in% c("2019", "2020", "2021", "2022"))
+#should this not use scaled SafeGraph data?
+
+ggplot(data = total_scatter_data, mapping = aes(x = Visits, y = observations)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "SafeGraph Arches National Park POI Visitation vs. Arches Visitation For Those Rows")
+
+total_poi_equation <- lm(observations ~ Visits, data = total_scatter_data)
+print(total_poi_equation)
 
 #Graphs for locations
 arches_graph_data <- arches_data_both %>%

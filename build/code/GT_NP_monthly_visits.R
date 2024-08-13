@@ -164,3 +164,9 @@ gt_visits_geo <- gt_visits_correct %>%
 mapview(gt_visits_geo)
 
 saveRDS(gt_visits_correct, "/data/kfloersheim/tc_nps/build/cache/gt_visits_months.rds")
+
+gt_visits_final <- gt_visits_months %>%
+  filter(placekey != "zzw-222@5qp-zb5-z75") %>%
+   collect()
+
+saveRDS(gt_visits_final, "/data/kfloersheim/tc_nps/build/cache/gt_visits_months_correct.rds")

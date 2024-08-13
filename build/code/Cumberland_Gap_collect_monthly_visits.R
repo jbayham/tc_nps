@@ -102,4 +102,13 @@ cg_visits_geo <- cg_visits_correct %>%
   st_as_sf(wkt = "polygon_wkt", crs=4326)
 mapview(cg_visits_geo)
 
-saveRDS(cg_visits_correct, "/data/kfloersheim/tc_nps/build/cache/cg_visits_months.rds")
+cg_visits_final <- cg_visits_months %>%
+  filter(placekey != "zzy-223@63m-k6k-hkf") %>%
+  collect()
+
+cg_visits_geo_corrected <- cg_visits_final %>%
+  filter(!is.na(polygon_wkt))%>%
+  st_as_sf(wkt = "polygon_wkt", crs=4326)
+mapview(cg_visits_geo_corrected)
+
+saveRDS(cg_visits_final, "/data/kfloersheim/tc_nps/build/cache/cg_visits_months.rds")

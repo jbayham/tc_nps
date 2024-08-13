@@ -118,3 +118,9 @@ cm_visits_geo <- cm_visits %>%
 mapview(cm_visits_geo)
 
 saveRDS(cm_visits, "/data/kfloersheim/tc_nps/build/cache/cm_visits_months.rds")
+
+cm_visits_corrected <- cm_visits_months %>%
+  filter(placekey != "222-222@63s-sgd-gp9") %>%
+  collect()
+
+saveRDS(cm_visits_corrected, "/data/kfloersheim/tc_nps/build/cache/cm_visits_months_correct.rds")

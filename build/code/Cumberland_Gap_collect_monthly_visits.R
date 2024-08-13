@@ -102,6 +102,8 @@ cg_visits_geo <- cg_visits_correct %>%
   st_as_sf(wkt = "polygon_wkt", crs=4326)
 mapview(cg_visits_geo)
 
+#cg_visits_months was originally saved to include this placekey
+
 cg_visits_final <- cg_visits_months %>%
   filter(placekey != "zzy-223@63m-k6k-hkf") %>%
   collect()

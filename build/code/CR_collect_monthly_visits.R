@@ -1,9 +1,6 @@
 #Capitol Reef National Park
 p_load(mapview, arrow, tools, data.table)
 
-arrow_con <-open_dataset("/data/restricted_data/dewey/safegraph_core_geometry_parquet")
-glimpse(arrow_con)
-
 cr_pt <- data.frame(lon = c(-111.862753, -110.511435),
                     lat = c(37.377867,38.735944))
 

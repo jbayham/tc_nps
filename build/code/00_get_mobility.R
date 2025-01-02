@@ -1,0 +1,59 @@
+#This script queries the mobility data from Advan database located on server datecompute-02
+
+library(pacman)
+p_load(tidyverse,janitor,arrow,readxl)
+
+source("project_init.R")
+
+################################# Read in park map created by Kate F. She used
+#bounding boxes around the park to identify placekeys of the park. Advan no
+#longer processes visits to the park itself. We grab all placekeys for which the
+#NPS boundary is listed as the parent placekey
+
+park_placekeys <- read_excel("build/inputs/nps_placekeys.xlsx") %>%
+  clean_names() %>%
+  select(1:4) %>%
+  drop_na(park)
+
+count(park_placekeys,park)
+
+#Connect to monthly patterns
+arrow_con <- open_dataset("/data/restricted_data/dewey/advan_monthly_patterns_parquet/") 
+
+
+#Extracting monthly patterns of all planned parenthood locations in US
+pp_pat <- arrow_con %>%
+  filter(placekey %in% na.omit(park_placekeys$placekey)) %>%
+         #date_range_start == as_date("2021-07-01")) %>%
+  collect()
+
+count(pp_pat,date_range_start) %>% 
+  ggplot(aes(x=date_range_start,y=n)) +
+  geom_col()
+
+write_csv(pp_pat,"build/inputs/park_monthly_pat.csv")
+
+########################################################
+#Expand json columns from tract
+
+
+
+########################################################
+#Query home panel stats
+arrow_con <- open_dataset("/data/restricted_data/dewey/advan_monthly_patterns_home_panel_parquet/") 
+
+
+#Aggregate to tracts, convert date
+home_panel <- arrow_con %>%
+  filter(iso_country_code=="US") %>%
+  collect()
+
+tract_devices <- home_panel %>%
+  group_by(tract=str_sub(census_block_group,1,11), 
+           year,mon) %>%
+  summarize(residing=sum(number_devices_residing,na.rm=TRUE),
+            daytime=sum(number_devices_primary_daytime,na.rm=TRUE)) %>%
+  ungroup()
+
+
+write_csv(tract_devices,"build/inputs/tract_devices.csv")

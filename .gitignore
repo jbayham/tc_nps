@@ -49,4 +49,5 @@ po/*~
 rsconnect/
 
 build/inputs
+build/cache
 *.Rproj

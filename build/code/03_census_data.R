@@ -169,8 +169,12 @@ census_tract <- census_raw %>%
 #cache census dataset
 write_csv(census_tract,"build/cache/census_data.csv")
 #########################
-
+#Cache census tract origin points for use in geting travel distances/times
+#There are duplicates of tracts with different lat lon because I break all
+#multipolygons into polygons. We use the largest one.
 census_geo <- census_cached %>%
-  distinct(geoid,longitude,latitude) 
+  distinct(tract=geoid,orig_lon=longitude,orig_lat=latitude,area) %>%
+  arrange(tract,desc(area)) %>%
+  distinct(tract,.keep_all = TRUE)
 
 write_csv(census_geo,"build/cache/census_geo.csv")

@@ -25,6 +25,14 @@ run.script("functions")
 ##########################################
 #This function sets up the directory structure with an options 
 #to create a symbolic link to the inputs folder that may be shared across several users
-folder.setup(slink="/RSTOR/bayham/projects/tc_nps/inputs")
+comp = Sys.info()
+
+if(comp["nodename"]=="Judes-MacBook-Pro-2.local"){
+  folder.setup(slink="")#local setup
+} else {
+  folder.setup(slink="/RSTOR/bayham/projects/tc_nps/inputs")
+}
+
+
 
 #dlgMessage("Do you need to pull the repo?")

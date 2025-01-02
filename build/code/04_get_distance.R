@@ -2,7 +2,7 @@
 
 #install.packages("mapsapi")
 library(pacman)
-p_load(tidyverse,sf,mapsapi,janitor,measurements)
+p_load(tidyverse,sf,mapsapi,janitor,measurements,readxl)
 
 source("project_init.R")
 
@@ -12,17 +12,29 @@ key = Sys.getenv("GOOGLE_MAPS_API_KEY")
 if(!dir.exists("build/cache/google_dist")) dir.create("build/cache/google_dist")
 
 #####################################
+#Read in parks
+park_placekeys <- read_excel("build/inputs/nps_placekeys.xlsx") %>%
+  clean_names() %>%
+  select(1:4) %>%
+  drop_na(park)
+
+arches = filter(park_placekeys,park=="Arches") %>%
+  select(park,placekey)
+
 #Read in data of all unique origins
-census_geo <- read_csv("build/cache/census_geo.csv") %>%
-  rename(orig_lon=longitude,orig_lat=latitude)
+census_geo <- read_csv("build/cache/census_geo.csv") 
 
-origins <- read_csv("build/cache/origin_tracts.csv") %>%
-  distinct(tract) %>%
-  inner_join(census_geo,by=c("tract"="geoid"))
 
-left_out <- read_csv("build/cache/origin_tracts.csv") %>%
-  distinct(tract) %>%
-  anti_join(census_geo,by=c("tract"="geoid"))
+origins <- read_csv("build/cache/parks_home_tract.csv") %>%
+  distinct(placekey,tract) %>%
+  inner_join(arches,by = join_by(placekey)) %>%
+  left_join(census_geo,by=c("tract"))
+
+
+left_out <- origins %>%
+  filter(is.na(orig_lon)) %>%
+  select(placekey,tract)
+
 
 
 

@@ -50,4 +50,5 @@ rsconnect/
 
 build/inputs
 build/cache
+analysis/cache
 *.Rproj

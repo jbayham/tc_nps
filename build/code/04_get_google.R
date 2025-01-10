@@ -2,7 +2,7 @@
 
 #install.packages("mapsapi")
 library(pacman)
-p_load(tidyverse,sf,mapsapi,janitor,measurements,readxl)
+p_load(tidyverse,sf,mapsapi,janitor,measurements,progress,readxl)
 
 source("project_init.R")
 
@@ -13,10 +13,7 @@ if(!dir.exists("build/cache/google_dist")) dir.create("build/cache/google_dist")
 
 #####################################
 #Read in parks
-park_placekeys <- read_excel("build/inputs/nps_placekeys.xlsx") %>%
-  clean_names() %>%
-  select(1:4) %>%
-  drop_na(park)
+park_subset <- readRDS("build/cache/park_subset.rds")
 
 arches = filter(park_placekeys,park=="Arches") %>%
   select(park,placekey)
@@ -25,10 +22,10 @@ arches = filter(park_placekeys,park=="Arches") %>%
 census_geo <- read_csv("build/cache/census_geo.csv") 
 
 
-origins <- read_csv("build/cache/parks_home_tract.csv") %>%
+od_dat <- read_csv("build/cache/parks_home_tract.csv") %>%
   distinct(placekey,tract) %>%
-  inner_join(arches,by = join_by(placekey)) %>%
-  left_join(census_geo,by=c("tract"))
+  inner_join(park_subset,by = join_by(placekey)) %>%
+  left_join(select(census_geo,-area), by = c("tract"))
 
 
 left_out <- origins %>%
@@ -36,26 +33,44 @@ left_out <- origins %>%
   select(placekey,tract)
 
 
+# xwalk <- read_delim("build/inputs/tab20_tract20_tract10_natl.txt",delim = "|") %>%
+#   clean_names()
 
+od_dat <- od_dat %>%
+  drop_na(dest_lon:orig_lat) %>%
+  arrange(park,location_name,tract)
 
-#####################
-grp_num_assign <- function(vec,set_length){
-  rws=length(vec)
-  grp_id = rep(1:ceiling(rws/set_length), each=set_length, length.out=rws)
-  
-  return(grp_id)
-}
 ####################
-#Break up origins into chunks of 25
-split_points <- origins %>%
-  mutate(dest_lon = -83.890749,
-         dest_lat = 35.942799) %>%
-  group_split(group = grp_num_assign(tract,25)) 
+#Already queried
+dist_comp <- list.files("build/cache/google_dist",full.names = T,pattern = ".csv") %>%
+  map(~read_csv(.,col_select = c(placekey,tract,trav_dist),col_types = "ccn")) %>%
+  bind_rows() %>%
+  drop_na() %>%
+  distinct()
+
+if(nrow(dist_comp)==0){
+  remaining <- od_dat
+} else {
+  remaining <- anti_join(od_dat,dist_comp,by=c("placekey","tract"))
+}
 
 
-dist_out <- split_points %>%
+####################
+#Break up origins into chunks of 25 with same destination
+split_points <- remaining %>%
+  group_split(group = grp_num_assign(tract,25),placekey) 
+
+
+df=split_points[[2]] 
+
+pb <- progress_bar$new(
+  format = "/n  [:bar] :current/:total :elapsedfull eta: :eta",
+  total = length(split_points))
+
+split_points %>%
   walk(function(df){
     message(paste0("Starting group ",df$group[1]))
+    pb$tick()
     #Check that all destinations are same
     if(nrow(df)>1 & var(df$dest_lon)!=0) stop("Not all destinations are the same.")
     
@@ -66,6 +81,8 @@ dist_out <- split_points %>%
       key = key,
       quiet = T
     )
+    
+    #pts <- mp_get_matrix(doc,value = "distance_m")
     
     #Extract distance component
     m = conv_unit(mp_get_matrix(doc, value = "distance_m"),"m","mi")
@@ -82,13 +99,15 @@ dist_out <- split_points %>%
     
     
     #Sys.sleep(5)
-    write_csv(out,paste0("build/cache/google_dist/group_",str_pad(out$group[1],3,"left","0"),".csv"))
+    write_csv(out,paste0("build/cache/google_dist/group_",str_pad(out$group[1],3,"left","0"),"_",generate_random_string(length=5),".csv"))
     
-  },.progress = TRUE)
+  })
 
 google_dist <- list.files("build/cache/google_dist",full.names = T) %>%
-  map(~read_csv(.,col_select = c(tract,trav_dist,trav_time),col_types = "cnn")) %>%
-  bind_rows()
+  map(~read_csv(.,col_select = c(park,placekey,tract,trav_dist,trav_time),col_types = "cccnn")) %>%
+  bind_rows() %>%
+  drop_na() %>%
+  distinct(park,placekey,tract,.keep_all = T) 
 
 write_csv(google_dist,"build/cache/google_dist.csv")
 

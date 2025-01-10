@@ -6,6 +6,7 @@ The goal of this project is to assess the quality of mobile device data for cond
 
 # To Do 
 
+- Advan records visits by 2010 census tracts. However, we extract census data and locations from the 2023 5-year ACS, which uses the 2020 delineations. This leads to mismatches when an old tract geoid no longer exists because it was broken into several tracts. There are crosswalks that map between the two. For now, we ignore the mismatches and treat them as missing at random. Next steps should be to use 2020-2010 tract crosswalk to fill in data. Since we extract data for all tracts in a county, the new tracts should be in the same county.
 
 ********************************************
 

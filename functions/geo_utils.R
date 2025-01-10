@@ -14,3 +14,15 @@ sfc_as_cols <- function(x, geometry, names = c("x","y")) {
   ret <- setNames(ret,names)
   dplyr::bind_cols(x,ret)
 }
+
+#####################
+grp_num_assign <- function(vec,set_length){
+  rws=length(vec)
+  grp_id = rep(1:ceiling(rws/set_length), each=set_length, length.out=rws)
+  
+  return(grp_id)
+}
+
+generate_random_string <- function(length = 5) {
+  paste0(sample(c(0:9, LETTERS), length, replace = TRUE), collapse = "")
+}

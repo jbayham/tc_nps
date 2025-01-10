@@ -17,6 +17,16 @@ park_placekeys <- read_excel("build/inputs/nps_placekeys.xlsx") %>%
 
 count(park_placekeys,park)
 
+saveRDS(park_placekeys,"build/cache/park_placekeys.rds")
+
+#Subset of pois with verified locations and known visitor histories
+park_subset <- read_excel("build/inputs/park_ref.xlsx") %>%
+  select(park:dest_lat)
+
+saveRDS(park_subset,"build/cache/park_subset.rds")
+
+
+
 #Connect to monthly patterns
 arrow_con <- open_dataset("/data/restricted_data/dewey/advan_monthly_patterns_parquet/") 
 
@@ -33,8 +43,11 @@ count(pp_pat,date_range_start) %>%
 
 write_csv(pp_pat,"build/inputs/park_monthly_pat.csv")
 
-########################################################
-#Expand json columns from tract
+# park_subset %>%
+#   filter(is.na(dest_lon)) %>%
+#   inner_join(distinct(park_monthly_pat,placekey,location_name,longitude,latitude)) %>%
+#   st_as_sf(coords = c("longitude","latitude"),crs=4326) %>%
+#   mapview::mapview()
 
 
 

@@ -7,16 +7,24 @@ conflicts_prefer(dplyr::filter)
 source("project_init.R")
 
 ################################################
+#Read in park_subset
+park_subset <- readRDS("build/cache/park_subset.rds")
+
 #Read in visits data
 visits <- read_csv("build/inputs/park_monthly_pat.csv") %>%
-  mutate(date_range_start=as_date(date_range_start)) 
+  mutate(date_range_start=as_date(date_range_start)) %>%
+  inner_join(select(park_subset,placekey))
+  
 
 #Calculate ratio of visits to visitors to estimate visits per visitor
 #Adjust for sample used in regression
 visits_to_visitors <- visits %>%
-  transmute(visit_ratio = raw_visit_counts/raw_visitor_counts) 
+  mutate(visit_ratio = raw_visit_counts/raw_visitor_counts) 
 
-summary(visits_to_visitors$visit_ratio)
+visits_to_visitors %>%
+  group_by(placekey,location_name) %>%
+  summarise(vr = mean(visit_ratio,na.rm=TRUE)) %>%
+  write_csv("build/cache/visit_ratio.csv")
 
 
 #Explode visits by home tract

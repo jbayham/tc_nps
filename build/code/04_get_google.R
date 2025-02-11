@@ -10,13 +10,17 @@ source("project_init.R")
 key = Sys.getenv("GOOGLE_MAPS_API_KEY")
 
 if(!dir.exists("build/cache/google_dist")) dir.create("build/cache/google_dist")
+if(!dir.exists("build/cache/google_dist/mobile")) dir.create("build/cache/google_dist/mobile")
+if(!dir.exists("build/cache/google_dist/survey")) dir.create("build/cache/google_dist/survey")
 
 #####################################
+#Mobile data
+####################################
 #Read in parks
 park_subset <- readRDS("build/cache/park_subset.rds")
 
-arches = filter(park_placekeys,park=="Arches") %>%
-  select(park,placekey)
+# arches = filter(park_placekeys,park=="Arches") %>%
+#   select(park,placekey)
 
 #Read in data of all unique origins
 census_geo <- read_csv("build/cache/census_geo.csv") 
@@ -28,7 +32,7 @@ od_dat <- read_csv("build/cache/parks_home_tract.csv") %>%
   left_join(select(census_geo,-area), by = c("tract"))
 
 
-left_out <- origins %>%
+left_out <- od_dat %>%
   filter(is.na(orig_lon)) %>%
   select(placekey,tract)
 
@@ -42,9 +46,10 @@ od_dat <- od_dat %>%
 
 ####################
 #Already queried
-dist_comp <- list.files("build/cache/google_dist",full.names = T,pattern = ".csv") %>%
-  map(~read_csv(.,col_select = c(placekey,tract,trav_dist),col_types = "ccn")) %>%
+dist_comp <- list.files("build/cache/google_dist/mobile",full.names = T,pattern = ".rds") %>%
+  map(readRDS) %>%
   bind_rows() %>%
+  select(placekey,tract,trav_dist) %>%
   drop_na() %>%
   distinct()
 
@@ -68,47 +73,67 @@ pb <- progress_bar$new(
   total = length(split_points))
 
 split_points %>%
-  walk(function(df){
-    message(paste0("Starting group ",df$group[1]))
-    pb$tick()
-    #Check that all destinations are same
-    if(nrow(df)>1 & var(df$dest_lon)!=0) stop("Not all destinations are the same.")
-    
-    doc = mp_matrix(
-      origins = as.matrix(df[,c("orig_lon","orig_lat")]),
-      destinations = as.matrix(df[1,c("dest_lon","dest_lat")]),
-      mode = "driving",
-      key = key,
-      quiet = T
-    )
-    
-    #pts <- mp_get_matrix(doc,value = "distance_m")
-    
-    #Extract distance component
-    m = conv_unit(mp_get_matrix(doc, value = "distance_m"),"m","mi")
-    s = conv_unit(mp_get_matrix(doc, value = "duration_s"),"sec","hr")
-    
-    #Build output df
-    out <- bind_cols(
-      df,
-      rownames_to_column(as.data.frame(m),var = "origin_label") %>%
-        rename(trav_dist = 2) %>%
-        mutate(trav_time = as.numeric(s),
-               dest_label = attr(s,"dimnames")[[2]])
-    )
-    
-    
-    #Sys.sleep(5)
-    write_csv(out,paste0("build/cache/google_dist/group_",str_pad(out$group[1],3,"left","0"),"_",generate_random_string(length=5),".csv"))
-    
-  })
+  walk(get_google_od,
+       cache_dir = "mobile", #Careful: this must match the name of the directory created above
+       progress = TRUE)
+       
 
-google_dist <- list.files("build/cache/google_dist",full.names = T) %>%
+google_dist <- list.files("build/cache/google_dist/mobile",full.names = T) %>%
   map(~read_csv(.,col_select = c(park,placekey,tract,trav_dist,trav_time),col_types = "cccnn")) %>%
   bind_rows() %>%
   drop_na() %>%
   distinct(park,placekey,tract,.keep_all = T) 
 
-write_csv(google_dist,"build/cache/google_dist.csv")
+write_csv(google_dist,"build/cache/mobile_google_dist.csv")
+
+##############################################
+#Survey data
+#############################################
+survey_raw <- readRDS("build/inputs/AE/SEM_dems.rds")
+
+survey_od_dat <- survey_raw %>%
+  clean_names() %>%
+  select(parkcode,zcta,starts_with("orig"),starts_with("dest")) %>%
+  drop_na()
+
+####################
+#Already queried
+survey_dist_comp <- list.files("build/cache/google_dist/survey",full.names = T,pattern = ".rds") %>%
+  map(readRDS) %>%
+  bind_rows() %>%
+  select(parkcode,zcta,trav_dist) %>%
+  #drop_na() %>%
+  distinct()
+
+if(nrow(survey_dist_comp)==0){
+  survey_remaining <- survey_od_dat
+} else {
+  survey_remaining <- anti_join(survey_od_dat,survey_dist_comp,by=c("parkcode","zcta"))
+}
+
+####################
+#Break up origins into chunks of 25 with same destination
+survey_split_points <- survey_remaining %>%
+  group_split(group = grp_num_assign(zcta,25),parkcode) 
 
 
+pb <- progress_bar$new(
+  format = "/n  [:bar] :current/:total :elapsedfull eta: :eta",
+  total = length(survey_split_points))
+
+survey_split_points %>%
+  walk(get_google_od,
+       cache_dir = "survey", #Careful: this must match the name of the directory created above
+       progress = TRUE)
+
+#survey_split_points[[20]] %>% View()
+
+survey_google_dist <- list.files("build/cache/google_dist/survey",full.names = T) %>%
+  map(readRDS) %>%
+  bind_rows() %>%
+  arrange(parkcode,zcta,desc(trav_time)) %>%
+  #select(parkcode,zcta,trav_dist,trav_time) %>%
+  drop_na() %>%
+  distinct(parkcode,zcta,.keep_all = T) 
+
+write_csv(survey_google_dist,"build/cache/survey_google_dist.csv.gz")

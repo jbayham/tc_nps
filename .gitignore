@@ -53,3 +53,4 @@ build/cache
 analysis/inputs
 analysis/cache
 *.Rproj
+*.DS_Store

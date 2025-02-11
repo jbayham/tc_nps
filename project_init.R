@@ -9,7 +9,8 @@ source("functions/init_functions.R")
 library(pacman)
 p_load(char=c("tidyverse",      #shortcut to many useful packages (eg, dplyr, ggplot)
             "conflicted",     #resolves function conflict across packages
-            "sf"             #for GIS
+            "sf",             #for GIS
+            "readxl"
 ))
 
 
@@ -34,5 +35,10 @@ if(comp["nodename"]=="Judes-MacBook-Pro-2.local"){
 }
 
 
+#Subset of pois with verified locations and known visitor histories
+park_subset <- read_excel("build/inputs/park_ref.xlsx") %>%
+  select(park:dest_lat)
+
+saveRDS(park_subset,"build/cache/park_subset.rds")
 
 #dlgMessage("Do you need to pull the repo?")

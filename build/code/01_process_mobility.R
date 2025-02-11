@@ -11,10 +11,45 @@ source("project_init.R")
 park_subset <- readRDS("build/cache/park_subset.rds")
 
 #Read in visits data
-visits <- read_csv("build/inputs/park_monthly_pat.csv") %>%
-  mutate(date_range_start=as_date(date_range_start)) %>%
-  inner_join(select(park_subset,placekey))
-  
+visits <- readRDS("build/inputs/visit_dat.rds") 
+
+poi <- readRDS("build/inputs/poi_dat.rds") 
+
+##############
+#Check whether all locations in park subset are valid
+visits %>% 
+  group_by(placekey) %>%
+  mutate(min_date = min(date_range_start,na.rm = T),
+            max_date = max(date_range_start,na.rm = T)) %>%
+  distinct(placekey,location_name) %>%
+  inner_join(select(park_subset,placekey)) %>% 
+  inner_join(poi,by="placekey") %>%
+  st_as_sf(wkt = "polygon_wkt",crs=4326) %>%
+  mapview::mapview()
+
+############
+
+
+
+#############################
+
+
+# parent_places <- visits %>%
+#   distinct(placekey,parent_location_name = location_name)
+# 
+# unique_places <- visits %>%
+#   distinct(placekey,parent_placekey,location_name,naics_code,top_category,category_tags,polygon_wkt) %>%
+#   inner_join(parent_places,by = c("parent_placekey"="placekey"))
+# 
+# unique_places %>%
+#   st_as_sf(wkt = "polygon_wkt",crs=4326) %>%
+#   mapview::mapview()
+# 
+# unique_places %>%
+#   select(-polygon_wkt) %>%
+#   write_csv("build/cache/check_sub_units.csv")
+
+###############################
 
 #Calculate ratio of visits to visitors to estimate visits per visitor
 #Adjust for sample used in regression
@@ -24,7 +59,7 @@ visits_to_visitors <- visits %>%
 visits_to_visitors %>%
   group_by(placekey,location_name) %>%
   summarise(vr = mean(visit_ratio,na.rm=TRUE)) %>%
-  write_csv("build/cache/visit_ratio.csv")
+  saveRDS("build/cache/visit_ratio.rds")
 
 
 #Explode visits by home tract
@@ -37,4 +72,10 @@ visits_by_ct <- visits %>%
 
 
 #cache visits by home tract
-write_csv(visits_by_ct,"build/cache/parks_home_tract.csv")
+visits_by_ct %>%
+  inner_join(select(park_subset,placekey)) %>%
+  write_csv("build/cache/parks_home_tract_t1.rds")
+
+visits_by_ct %>%
+  anti_join(select(park_subset,placekey)) %>%
+  write_csv("build/cache/parks_home_tract_t2.rds")

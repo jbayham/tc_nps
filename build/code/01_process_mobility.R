@@ -74,8 +74,8 @@ visits_by_ct <- visits %>%
 #cache visits by home tract
 visits_by_ct %>%
   inner_join(select(park_subset,placekey)) %>%
-  write_csv("build/cache/parks_home_tract_t1.rds")
+  saveRDS("build/cache/parks_home_tract_t1.rds")
 
 visits_by_ct %>%
   anti_join(select(park_subset,placekey)) %>%
-  write_csv("build/cache/parks_home_tract_t2.rds")
+  saveRDS("build/cache/parks_home_tract_t2.rds")

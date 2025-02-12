@@ -6,7 +6,6 @@ The goal of this project is to assess the quality of mobile device data for cond
 
 # To Do 
 
-- Advan records visits by 2010 census tracts. However, we extract census data and locations from the 2023 5-year ACS, which uses the 2020 delineations. This leads to mismatches when an old tract geoid no longer exists because it was broken into several tracts. There are crosswalks that map between the two. For now, we ignore the mismatches and treat them as missing at random. Next steps should be to use 2020-2010 tract crosswalk to fill in data. Since we extract data for all tracts in a county, the new tracts should be in the same county.
 
 ********************************************
 
@@ -49,7 +48,9 @@ This section describes the data sources and provides information about data proc
 
 - Advan Monthly Patterns: Mobile device visitation. Specifically, we use the monthly data disaggregated by census tract of origin to county monthly visits. We sum visits over the time window to match the SEM survey
 
-- American Community Survey 2022, 2023 (5 yr): We compile tract and zipcode level data on: population (table B01001), household median income (B19013), median age (B01002), education (B06009), and household size (B25010). Education is reported as the number of people with different categories of educational attainment. We calculate the fraction of the total with at least a bachelors degree. Details in [build/code/03_census_data.R](build/code/03_census_data.R)  
+- American Community Survey 2022, 2023 (5 yr): We compile tract and zipcode level data on: population (table B01001), household median income (B19013), median age (B01002), education (B06009), and household size (B25010). Details in [build/code/03_census_data.R](build/code/03_census_data.R)  
+
+  - 2010 - 2020 Census Crosswalk: <https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.2020.html>
 
 ## Sources
 
@@ -58,3 +59,9 @@ This section contains a bulleted list of data sources from the project.  If you 
 ## Data Processing
 
 This section describes how each script in the `build/inputs` folder processed the data into the analysis dataset.
+
+### 03_census_data
+
+We collect 2022 and 2023 5-year ACS data (population, household median income, median age, education, and household size) for all census tracts in the country. Education is reported as the number of people with different categories of educational attainment. We calculate the fraction of the total with at least a bachelors degree. Education is the single metric that is not complete.
+
+Advan records visits by 2010 census tracts. However, we extract census data and locations from the 2023 5-year ACS, which uses the 2020 delineations. This leads to dropped data when an old tract geoid no longer exists because it was broken into several tracts. The Census publishes a crosswalk that maps between the 2010 and 2020 data. We use the 2019 tract delineations to construct distance. For the recent attribute data, we use the crosswalk to map data based on the 2020 delineations to the 2010 delineations to merge with the Advan tract data.

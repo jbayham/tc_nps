@@ -9,23 +9,25 @@ source("project_init.R")
 
 ####################
 #Get ACS data from FTP
-tab_names <- c("b01001", #pop
-               "b01002", #age
-               "b06009", #education
-               "b19013", #hh med income
-               "b25010") #hh size
 
-
-
+#Getting geo reference file used to subset tract data
 acs_geo_ref <- read_delim("https://www2.census.gov/programs-surveys/acs/summary_file/2022/table-based-SF/documentation/Geos20225YR.txt",
                           delim = "|")
 tract_subset <- acs_geo_ref %>%
   filter(!is.na(TRACT)) %>%
-  #select(FILEID:COMPONENT,STATE,COUNTY,TRACT,GEO_ID) %>%
   select(GEO_ID)
 
+#Getting xwalk between 2010 and 2020 data
+xwalk <- read_delim("https://www2.census.gov/geo/docs/maps-data/data/rel2020/tract/tab20_tract20_tract10_natl.txt",
+                    delim = "|") %>%
+  clean_names() %>%
+  select(geoid_tract_20,arealand_tract_20,areawater_tract_20,
+         geoid_tract_10,arealand_tract_10,areawater_tract_10,
+         arealand_part,areawater_part)
 
-yr_list=c(2023)
+
+yr_list=c(2022)
+yr=2022
 
 for(yr in yr_list){
   
@@ -64,7 +66,7 @@ for(yr in yr_list){
     select(GEO_ID,hh_size = B25010_E001) %>% #select only total pop
     inner_join(tract_subset) 
   
-  
+  #Assembling census data
   tract_dat <- pop_dat %>%
     left_join(age_dat,by = join_by(GEO_ID)) %>%
     left_join(bach_dat,by = join_by(GEO_ID)) %>%
@@ -73,36 +75,54 @@ for(yr in yr_list){
     mutate(GEO_ID = str_remove(GEO_ID,"1400000US")) %>%
     rename(geoid=GEO_ID)
   
-  #################################
+  #Caching
   saveRDS(tract_dat,paste0("build/cache/census_data_",yr,".rds"))
+  ################################
+  # The Advan data was built on 2010 census
+  #tracts so we use a crosswalk to approximate ACS values for tracts that no
+  #longer exist by using a weighted average of the new tracts the old one
+  #became. 
+  #Map the data (2020 tracts) to the 2010 tracts reported by Advan
+  xwalk_data <- xwalk %>%
+    inner_join(tract_data,by = c("geoid_tract_20"="geoid")) %>%
+    mutate(weights = arealand_part/arealand_tract_10) %>%
+    group_by(geoid_tract_10) %>%
+    summarize(across(c(total_pop:hh_size),~sum(weights*.))) %>%
+    ungroup() %>%
+    rename(tract=geoid_tract_10)
+  
+  saveRDS(xwalk_data,paste0("build/cache/xwalk_data_",yr,".rds"))
 }
 
 
 
 
 ################################################
+#Constructing database of geographies
 
 if(!dir.exists("build/cache/census_geo")) dir.create("build/cache/census_geo")
-if(!dir.exists("build/cache/census_geo/temp")) dir.create("build/cache/census_geo/temp")
 st_list <- unique(str_extract(tract_subset$GEO_ID,"(?<=US)\\d{2}"))
 
 st=st_list[1]
-yr=2023
+yr=2019
 
 tract_geo <- 
   map(st_list,
       function(st){
         fname=paste0("build/cache/census_geo/tl_",yr,"_",st,"_tract")
         
+        #Downloading tiger file
         if(!file.exists(paste0(fname,".zip"))){
           download.file(url = paste0("https://www2.census.gov/geo/tiger/TIGER",yr,"/TRACT/tl_",yr,"_",st,"_tract.zip"),
                         destfile = paste0(fname,".zip"))
         }
         
+        #Unzipping
         if(!file.exists(paste0(fname,".shp"))){
           unzip(zipfile = paste0(fname,".zip"),exdir = "build/cache/census_geo/")
         }
         
+        #Read in and make multipolygon
         tig_temp <- st_read(paste0(fname,".shp")) %>%
           clean_names() %>%
           select(geoid,aland,awater) %>%
@@ -116,8 +136,22 @@ tract_geo <-
 
 saveRDS(tract_geo,paste0("build/cache/census_geo_",yr,".rds"))
 
+#Convert to lat lons for distance calculations
 tract_geo %>%
   st_centroid(of_largest_polygon = TRUE) %>%
   sfc_as_cols(.,names = c("longitude","latitude")) %>%
   st_drop_geometry() %>%
   saveRDS(paste0("build/cache/census_geo_points_",yr,".rds"))
+
+
+###########
+#Clean directories
+list.files("build/cache/census_geo",full.names = TRUE) %>%
+  file.remove()
+
+
+  
+    
+
+
+

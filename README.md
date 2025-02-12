@@ -1,6 +1,6 @@
 # National Parks Travel Cost with Mobile Device Data
 
-Jude Bayham, Kate Floersheim, Isa Naschold, Leslie Richardson, Aaron Enriquez
+Jude Bayham, Leslie Richardson, Aaron Enriquez Kate Floersheim, Isa Naschold,
 
 The goal of this project is to assess the quality of mobile device data for conducting recreation demand research. We will investigate the reliability of the data and compare consumer surplus estimates using mobile device data to those of conventional surveys.
 
@@ -44,6 +44,12 @@ The project root directory contains a file called `project_init.R` that initiali
 # Data
 
 This section describes the data sources and provides information about data processing.  I find it useful to describe these details during project development and refine them for the final write up.
+
+- Socio-economic Monitoring: Survey administered to 24 parks per year to monitor visitation.
+
+- Advan Monthly Patterns: Mobile device visitation. Specifically, we use the monthly data disaggregated by census tract of origin to county monthly visits. We sum visits over the time window to match the SEM survey
+
+- American Community Survey 2022, 2023 (5 yr): We compile tract and zipcode level data on: population (table B01001), household median income (B19013), median age (B01002), education (B06009), and household size (B25010). Education is reported as the number of people with different categories of educational attainment. We calculate the fraction of the total with at least a bachelors degree. Details in [build/code/03_census_data.R](build/code/03_census_data.R)  
 
 ## Sources
 

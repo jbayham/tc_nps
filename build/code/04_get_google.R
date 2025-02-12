@@ -17,20 +17,22 @@ if(!dir.exists("build/cache/google_dist/survey")) dir.create("build/cache/google
 #Mobile data
 ####################################
 #Read in parks
-park_subset <- readRDS("build/cache/park_subset.rds")
+park_subset <- readRDS("build/cache/park_subset.rds") %>%
+  select(code,placekey,dest_lon,dest_lat)
 
 # arches = filter(park_placekeys,park=="Arches") %>%
 #   select(park,placekey)
 
 #Read in data of all unique origins
-census_geo <- read_csv("build/cache/census_geo.csv") 
+census_geo <- readRDS("build/cache/census_geo_points_2019.rds") %>%
+  rename(tract=geoid)
 
 
-od_dat <- read_csv("build/cache/parks_home_tract.csv") %>%
+od_dat <- readRDS("build/cache/parks_home_tract_t1.rds") %>%
   distinct(placekey,tract) %>%
   inner_join(park_subset,by = join_by(placekey)) %>%
-  left_join(select(census_geo,-area), by = c("tract"))
-
+  distinct(code,tract,dest_lon,dest_lat) %>%
+  left_join(select(census_geo,tract,orig_lon=longitude,orig_lat=latitude), by = c("tract"))
 
 left_out <- od_dat %>%
   filter(is.na(orig_lon)) %>%
@@ -42,7 +44,7 @@ left_out <- od_dat %>%
 
 od_dat <- od_dat %>%
   drop_na(dest_lon:orig_lat) %>%
-  arrange(park,location_name,tract)
+  arrange(code,tract)
 
 ####################
 #Already queried

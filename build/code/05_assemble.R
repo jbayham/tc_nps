@@ -9,15 +9,20 @@ conflicts_prefer(lubridate::month)
 conflicts_prefer(dplyr::filter)
 ######################
 #Read in weekly visits by park and ct or origin
-parks_home_tract <- read_csv("build/cache/parks_home_tract.csv") %>%
+parks_home_tract <- readRDS("build/cache/parks_home_tract_t1.rds") %>%
   rename(measure_date = date_range_start) #%>%
 #mutate(survey_sample = measure_date %within% c((as_date("2021-04-01") %--% as_date("2022-06-30"))),
 #      panel_no = as.integer((year(measure_date) - 2019) * 2 + (month(measure_date) - 1) %/% 6 + 1))
 
-#Read in census income
-census_data <- read_csv("build/cache/census_data.csv") %>%
-  select(-tract) %>%
+#Read in census income and xwalk. Rowbinding and letting xwalk data have precedent
+census_data <- readRDS("build/cache/census_data_2022.rds") %>%
   rename(tract=geoid)
+
+xwalk_data <- readRDS("build/cache/xwalk_data_2022.rds")
+
+census_xwalk <- bind_rows(xwalk_data,census_data) %>%
+  distinct(tract,.keep_all = TRUE)
+
 
 #Read in travel distance and time
 # tc_raw <- read_csv("build/cache/AEcensus_final.csv") %>%
@@ -65,8 +70,9 @@ travel_cost_calc <- function(drange_filter,
   #Join with census tract data (income, age, ...)
   reg_data <- visitors %>%
     left_join(tract_devices_sub,by = c("tract")) %>%
-    left_join(census_data,by = c("tract")) %>%
+    left_join(census_xwalk,by = c("tract")) %>%
     left_join(tc_raw,by = c("placekey","tract")) 
+  
   
   #Keep record of recods los in join
   unmatched <- reg_data %>%

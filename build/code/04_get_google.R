@@ -18,10 +18,8 @@ if(!dir.exists("build/cache/google_dist/survey")) dir.create("build/cache/google
 ####################################
 #Read in parks
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
-  select(code,placekey,dest_lon,dest_lat)
+  select(code,code_dest,placekey,dest_lon,dest_lat)
 
-# arches = filter(park_placekeys,park=="Arches") %>%
-#   select(park,placekey)
 
 #Read in data of all unique origins
 census_geo <- readRDS("build/cache/census_geo_points_2019.rds") %>%
@@ -30,43 +28,54 @@ census_geo <- readRDS("build/cache/census_geo_points_2019.rds") %>%
 
 od_dat <- readRDS("build/cache/parks_home_tract_t1.rds") %>%
   distinct(placekey,tract) %>%
-  inner_join(park_subset,by = join_by(placekey)) %>%
-  distinct(code,tract,dest_lon,dest_lat) %>%
-  left_join(select(census_geo,tract,orig_lon=longitude,orig_lat=latitude), by = c("tract"))
+  inner_join(park_subset,by = join_by(placekey)) %>% #Join with park subset
+  distinct(code_dest,tract,dest_lon,dest_lat) %>%  #Distinct to find unique combinations of park code and dest_* because 
+  left_join(select(census_geo,tract,orig_lon=longitude,orig_lat=latitude), by = c("tract")) %>%
+  arrange(code_dest,tract)
 
 left_out <- od_dat %>%
-  filter(is.na(orig_lon)) %>%
-  select(placekey,tract)
+  filter(is.na(orig_lon))
 
 
 # xwalk <- read_delim("build/inputs/tab20_tract20_tract10_natl.txt",delim = "|") %>%
 #   clean_names()
 
-od_dat <- od_dat %>%
-  drop_na(dest_lon:orig_lat) %>%
-  arrange(code,tract)
 
 ####################
 #Already queried
-dist_comp <- list.files("build/cache/google_dist/mobile",full.names = T,pattern = ".rds") %>%
-  map(readRDS) %>%
-  bind_rows() %>%
-  select(placekey,tract,trav_dist) %>%
-  drop_na() %>%
-  distinct()
+cache_flist <- list.files("build/cache/google_dist/mobile",full.names = T,pattern = ".rds") 
 
-if(nrow(dist_comp)==0){
+
+if(is_empty(cache_flist)){
   remaining <- od_dat
 } else {
-  remaining <- anti_join(od_dat,dist_comp,by=c("placekey","tract"))
+  remaining <- cache_flist %>%
+    map(readRDS) %>%
+    bind_rows() %>%
+    select(code_dest,tract,trav_dist) %>%
+    drop_na() %>%
+    distinct() %>%
+    anti_join(od_dat,.,by=c("code_dest","tract"))
 }
 
+remaining <- remaining %>%
+  filter(code_dest=="GRTE_02")
+
+##############
+#Error checking
+# remaining_geo <- remaining %>%
+#   filter(code_dest!="GRTE_02") %>%
+#   st_as_sf(coords = c("orig_lon","orig_lat"),crs=4326)
+# 
+# mapview::mapview(remaining_geo)
 
 ####################
 #Break up origins into chunks of 25 with same destination
 split_points <- remaining %>%
-  group_split(group = grp_num_assign(tract,25),placekey) 
+  group_split(group = grp_num_assign(tract,25),code_dest) 
 
+# map_dbl(split_points,nrow) %>%
+#   hist()
 
 df=split_points[[2]] 
 
@@ -81,12 +90,18 @@ split_points %>%
        
 
 google_dist <- list.files("build/cache/google_dist/mobile",full.names = T) %>%
-  map(~read_csv(.,col_select = c(park,placekey,tract,trav_dist,trav_time),col_types = "cccnn")) %>%
+  #map(~read_csv(.,col_select = c(park,placekey,tract,trav_dist,trav_time),col_types = "cccnn")) %>%
+  map(readRDS) %>% 
   bind_rows() %>%
-  drop_na() %>%
-  distinct(park,placekey,tract,.keep_all = T) 
+  distinct(code_dest,tract,.keep_all = T) 
 
-write_csv(google_dist,"build/cache/mobile_google_dist.csv")
+google_dist_nomatch <- google_dist %>%
+  filter(if_any(everything(),is.na))
+
+google_dist <- google_dist %>%
+  drop_na()
+
+saveRDS(google_dist,"build/cache/mobile_google_dist.rds")
 
 ##############################################
 #Survey data

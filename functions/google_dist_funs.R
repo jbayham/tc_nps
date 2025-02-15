@@ -42,6 +42,8 @@ get_google_od <-
   
   
   #Sys.sleep(5)
-  saveRDS(out,paste0("build/cache/google_dist/",cache_dir,"/group_",str_pad(out$group[1],3,"left","0"),"_",generate_random_string(length=5),".rds"))
+  saveRDS(out,paste0("build/cache/google_dist/",cache_dir,"/group_",
+                     str_pad(out$group[1],3,"left","0"),"_",
+                     generate_random_string(length=5),".rds"))
   
   }

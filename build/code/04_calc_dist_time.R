@@ -12,6 +12,7 @@ key = Sys.getenv("GOOGLE_MAPS_API_KEY")
 if(!dir.exists("build/cache/google_dist")) dir.create("build/cache/google_dist")
 if(!dir.exists("build/cache/google_dist/mobile")) dir.create("build/cache/google_dist/mobile")
 if(!dir.exists("build/cache/google_dist/survey")) dir.create("build/cache/google_dist/survey")
+if(!dir.exists("build/cache/osrm_dist/mobile")) dir.create("build/cache/osrm_dist/mobile",recursive = TRUE)
 
 #####################################
 #Mobile data
@@ -42,7 +43,7 @@ left_out <- od_dat %>%
 
 
 ####################
-#Already queried
+#Already queried google
 cache_flist <- list.files("build/cache/google_dist/mobile",full.names = T,pattern = ".rds") 
 
 
@@ -69,6 +70,27 @@ remaining <- remaining %>%
 # 
 # mapview::mapview(remaining_geo)
 
+######################
+cache_flist <- list.files("build/cache/osrm_dist/mobile",full.names = T,pattern = ".rds") 
+
+
+if(is_empty(cache_flist)){
+  remaining <- od_dat
+} else {
+  remaining <- cache_flist %>%
+    map(readRDS) %>%
+    bind_rows() %>%
+    select(code_dest,tract,trav_dist) %>%
+    drop_na() %>%
+    distinct() %>%
+    anti_join(od_dat,.,by=c("code_dest","tract"))
+}
+
+# remaining <- remaining %>%
+#   filter(code_dest=="GRTE_02")
+
+
+
 ####################
 #Break up origins into chunks of 25 with same destination
 split_points <- remaining %>%
@@ -83,9 +105,9 @@ pb <- progress_bar$new(
   format = "/n  [:bar] :current/:total :elapsedfull eta: :eta",
   total = length(split_points))
 
-split_points %>%
+split_points[1] %>%
   walk(get_google_od,
-       cache_dir = "mobile", #Careful: this must match the name of the directory created above
+       cache_dir = "build/cache/google_dist/mobile", #Careful: this must match the name of the directory created above
        progress = TRUE)
        
 
@@ -102,6 +124,46 @@ google_dist <- google_dist %>%
   drop_na()
 
 saveRDS(google_dist,"build/cache/mobile_google_dist.rds")
+
+########################
+#OSRM
+
+#Break up origins into chunks of 250 with same destination
+split_points <- remaining %>%
+  group_split(group = grp_num_assign(tract,250),code_dest) 
+
+# map_dbl(split_points,nrow) %>%
+#   hist()
+
+df=split_points[[2]] 
+
+pb <- progress_bar$new(
+  format = "/n  [:bar] :current/:total :elapsedfull eta: :eta",
+  total = length(split_points))
+
+split_points %>%
+  walk(get_osrm_od,
+       cache_dir = "build/cache/osrm_dist/mobile", #Careful: this must match the name of the directory created above
+       progress = TRUE)
+
+
+osrm_dist <- list.files("build/cache/osrm_dist/mobile",full.names = T) %>%
+  map(readRDS) %>% 
+  bind_rows() %>%
+  distinct(code_dest,tract,.keep_all = T) 
+
+osrm_dist_nomatch <- osrm_dist %>%
+  filter(if_any(everything(),is.na))
+
+osrm_dist <- osrm_dist %>%
+  drop_na()
+
+saveRDS(osrm_dist,"build/cache/mobile_osrm_dist.rds")
+
+
+
+
+
 
 ##############################################
 #Survey data

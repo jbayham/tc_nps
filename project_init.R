@@ -37,7 +37,8 @@ if(comp["nodename"]=="Judes-MacBook-Pro-2.local"){
 
 #Subset of pois with verified locations and known visitor histories
 park_subset <- read_excel("build/inputs/park_ref.xlsx") %>%
-  select(code:dest_lat) %>%
+  select(code:sample_period) %>%
+  mutate(sample_period = as_date(sample_period)) %>%
   drop_na(code)
 
 saveRDS(park_subset,"build/cache/park_subset.rds")

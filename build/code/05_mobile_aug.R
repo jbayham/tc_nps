@@ -48,6 +48,9 @@ prob_df <- map2(mobile_split,
                 p_list,
                 function(df,dest){
   
+  #Checking park code matches
+  if(df$code[1] == dest) stop("Data does not match the park code")
+                  
   #Loading the flying prob prediction models
   ae_fly_dem_all = readRDS(paste0("build/inputs/AE/Reg_Fly/reg_fly_dem_allsites.rds")) #Flight model with demographics all sites
   ae_fly_nodem_all = readRDS(paste0("build/inputs/AE/Reg_Fly/reg_fly_nodem_allsites.rds"))

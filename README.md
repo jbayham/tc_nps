@@ -60,8 +60,27 @@ This section contains a bulleted list of data sources from the project.  If you 
 
 This section describes how each script in the `build/inputs` folder processed the data into the analysis dataset.
 
+### 01_process_mobility 
+
+Reads and processes Advan visitation data, checking the validity of park locations, calculating visits per visitor ratios, and expanding visits by home census tract for further analysis.
+
 ### 03_census_data
 
 We collect 2022 and 2023 5-year ACS data (population, household median income, median age, education, and household size) for all census tracts in the country. Education is reported as the number of people with different categories of educational attainment. We calculate the fraction of the total with at least a bachelors degree. Education is the single metric that is not complete.
 
 Advan records visits by 2010 census tracts. However, we extract census data and locations from the 2023 5-year ACS, which uses the 2020 delineations. This leads to dropped data when an old tract geoid no longer exists because it was broken into several tracts. The Census publishes a crosswalk that maps between the 2010 and 2020 data. We use the 2019 tract delineations to construct distance. For the recent attribute data, we use the crosswalk to map data based on the 2020 delineations to the 2010 delineations to merge with the Advan tract data.
+
+
+### 04_calc_dist_time.R 
+
+Calculates travel distances and times between origin census tracts and national parks using Google Maps API and OSRM API. The script also calculates crow-fly distance for calculating flight costs. Includes error checking and caching.
+
+### 05_mobile_aug 
+
+Merges travel distances with census data, applies pre-trained models to estimate flight probabilities and number splitting travel costs, and prepares data for regression analysis. We train models to predict travel mode (flight or driving) and number of people splitting expenses using the SEM data. We train several versions of the models including driving distance only (no controls), with controls (income, age, household size). We use logistic regression to estimate the probability of flying and poisson to estimate the number of people splitting costs. 
+
+### 06_assemble.R 
+
+Assembles the final dataset by integrating visits, travel costs, and socio-economic data, calculating travel costs, and generating datasets for regression analysis.
+
+

@@ -103,10 +103,12 @@ bootstrap_estimation_par <- function(X, #Design matrix
   #   format = " [:bar] :percent eta: :eta",
   #   total = length(start_boot:(start_boot+n_boot)), clear = FALSE, width= 60)
   # 
-  #Not all bs runs converge and we only save those that do. This outer loop checks how many have converged and enters a while loop.
-  #num_runs <- length(dir_ls(output_dir, type = "file", recurse = FALSE))
-  #while(n_runs < n_boot)
+  
   plan(multisession(workers = 4))
+  
+  #Not all bs runs converge and we only save those that do. This outer loop checks how many have converged and enters a while loop.
+  num_runs=0
+  while(num_runs < n_boot){
   
   # Perform bootstrap iterations
   future_walk(.x = start_boot:(start_boot+n_boot),
@@ -118,7 +120,8 @@ bootstrap_estimation_par <- function(X, #Design matrix
                 boot_indices <- sample(1:length(y), size = length(y), replace = TRUE)
                 
                 # Resample data
-                c_names <- c("travel_total_cost","white_perc","bach_degree_perc","med_age","residing")
+                c_names <- c("cost_total_weighted","income","age","householdsize","residing")
+                #c_names <- c("cost_total_weighted","age","householdsize","residing")
                 start_beta <- rep(0,ncol(X))
                 X_boot <- X[boot_indices, , drop = FALSE]
                 y_boot <- y[boot_indices]
@@ -140,6 +143,13 @@ bootstrap_estimation_par <- function(X, #Design matrix
                   saveRDS(result, file = file.path(output_dir, paste0("bootstrap_iter_", b, ".rds")))
                 }
               },.progress = TRUE)
+    
+    file_list <- dir_ls(output_dir, type = "file", recurse = FALSE)
+    num_runs = length(file_list)
+    
+    start_boot=start_boot+n_boot
+    
+  }
 }
 
 

@@ -104,16 +104,17 @@ bootstrap_estimation_par <- function(X, #Design matrix
   #   total = length(start_boot:(start_boot+n_boot)), clear = FALSE, width= 60)
   # 
   
-  plan(multisession(workers = 4))
+  plan(multisession(workers = 10))
   
   #Not all bs runs converge and we only save those that do. This outer loop checks how many have converged and enters a while loop.
   num_runs=0
-  while(num_runs < n_boot){
+  target_runs=n_boot
+  while(num_runs < target_runs){
   
   # Perform bootstrap iterations
   future_walk(.x = start_boot:(start_boot+n_boot),
               .options = furrr_options(seed = TRUE),
-              .f = function(b){
+              .f = function(b,out_dir){
                 #pb$tick()
                 # Resample indices
                 set.seed(b) #set seed for reproducibility
@@ -137,17 +138,21 @@ bootstrap_estimation_par <- function(X, #Design matrix
                 )
                 
                 # Store the coefficients if model converges
-                if (fit$convergence %in% c(0)) {
+                if (fit$convergence %in% c(0,10)) {
                   result <- data.frame(t(fit$par))
                   colnames(result) <- c("constant",c_names)
-                  saveRDS(result, file = file.path(output_dir, paste0("bootstrap_iter_", b, ".rds")))
+                  saveRDS(result, file = file.path("/data/jbuser/git_projects/tc_nps",out_dir, paste0("bootstrap_iter_", b, ".rds")))
                 }
-              },.progress = TRUE)
+              },.progress = TRUE,
+              out_dir = output_dir)
     
     file_list <- dir_ls(output_dir, type = "file", recurse = FALSE)
     num_runs = length(file_list)
     
     start_boot=start_boot+n_boot
+    
+    suc_rate = num_runs/n_boot
+    n_boot = (target_runs - num_runs)/suc_rate
     
   }
 }

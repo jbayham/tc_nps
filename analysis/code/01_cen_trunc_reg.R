@@ -11,11 +11,8 @@ source("project_init.R")
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
   filter(primary==1)
 
-tf_names <- list.files("analysis/inputs/compare_reg",full.names = TRUE) 
-
-#Read in the data
-f_names <- c(tf_names)
-
+f_names <- list.files("analysis/inputs/compare_reg",full.names = TRUE) 
+m_names <- park_subset$code_dest
 
 df_list <- map(f_names,function(x){
   readRDS(x)
@@ -28,13 +25,14 @@ if(!dir.exists("analysis/cache/compare_regs")) dir.create("analysis/cache/compar
 
 ###########
 #Start
-df=df_list[[10]]
-nm=park_subset$code_dest[10]
-walk2(df_list,
-      m_names,
+df=df_list[[12]]
+nm=m_names[12]
+walk2(df_list[c(12:31)],
+      m_names[c(12:31)],
       function(df,nm){
         
         coef_fname = paste0("analysis/cache/compare_regs/",nm,".rds")
+        bs_run_dir = paste0("analysis/cache/bs_runs/",nm)
         
         #if(any(coef_fname %in% list.files("analysis/cache",pattern = ".rds",full.names = TRUE))) next
         
@@ -44,10 +42,10 @@ walk2(df_list,
 
         if(nobs<100){
           message("Too few obs to run model.")
-          next
+          return(NULL)
         } 
         
-        saveRDS(nobs,paste0("analysis/cache/nobs/",nm,".rds"))
+        #saveRDS(nobs,paste0("analysis/cache/nobs/",nm,".rds"))
         
         #Define covariate vector
         c_names <- c("cost_total_weighted","income","age","householdsize","residing")
@@ -77,12 +75,20 @@ walk2(df_list,
         
         # Run bootstrap for standard errors
         bootstrap_estimation_par(X = xmat,
-                                 y = yvec, 
+                                 y = yvec,
                                  max_iter = 2000,
                                  start_boot = 1,
                                  n_boot = 500,
-                                 output_dir = paste0("analysis/cache/bs_runs/",nm))
+                                 output_dir = bs_run_dir)
         
+        #Read in all runs, row_bind and cache
+        bs_runs <- list.files(bs_run_dir,full.names = T) %>%
+          map(readRDS) %>%
+          bind_rows()
+        
+        if(nrow(bs_runs)>=500) dir_delete(bs_run_dir)
+        
+        saveRDS(bs_runs,paste0("analysis/cache/bs_runs/",nm,".rds"))
         
       })
 

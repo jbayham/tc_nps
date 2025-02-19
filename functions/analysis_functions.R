@@ -170,29 +170,37 @@ bs_p_val <- function(coefs,boot_se,boot_mat){
 
 
 bs_table <- function(reg_coef, #coefficients from the full model
-                     results, #bootstrap runs
-                     nobs){ #number of obs for table
+                     bs_dat, #bootstrap runs
+                     nobs, #number of obs for table
+                     tc_coef_name = "cost_total_weighted",
+                     label_names = c("Travel Cost"="cost_total_weighted","Income"="income","Age"="age","Household Size"="householdsize","Devices"="residing","Constant"="constant"),
+                     visit_ratio
+                    ){
   
   require(glue)
   
-  boot_se = apply(results,2,sd)  #bootstrap standard errors
-  observed_t = reg_coef / boot_se #observed t values
+  #Ensuring data is in the correct order
+  reg_coef = reg_coef[label_names]
+  bs_dat = bs_dat[,label_names]
+  
+  boot_se = apply(bs_dat,2,sd)  #bootstrap standard errors
+  #observed_t = reg_coef / boot_se #observed t values
   
   p_values = bs_p_val(coefs = reg_coef, #
                       boot_se = boot_se,
-                      boot_mat = as.matrix(results))
+                      boot_mat = as.matrix(bs_dat))
   
-  bootstrap_ci <- apply(results, 2, quantile, probs = c(0.025, 0.975))
+  bootstrap_ci <- apply(bs_dat, 2, quantile, probs = c(0.025, 0.975))
   
   
-  cs = -1/reg_coef["travel_total_cost"]
-  cs_se = sd(-1/results[,"travel_total_cost"],na.rm = TRUE)
-  cs_ci = quantile(-1/results[,"travel_total_cost"],probs = c(0.025, 0.975),na.rm = TRUE)
-  cs_day = cs/1.45
-  cs_day_ci = quantile(-1/results[,"travel_total_cost"]/1.45,probs = c(0.025, 0.975),na.rm = TRUE)
+  cs = -1/reg_coef[tc_coef_name]
+  cs_se = sd(-1/bs_dat[,tc_coef_name],na.rm = TRUE)
+  cs_ci = quantile(-1/bs_dat[,tc_coef_name],probs = c(0.025, 0.975),na.rm = TRUE)
+  cs_day = cs/visit_ratio
+  cs_day_ci = quantile(-1/bs_dat[,tc_coef_name]/visit_ratio,probs = c(0.025, 0.975),na.rm = TRUE)
   
   ti <- data.frame(
-    term = c("Travel Cost","Race","Education","Age","Devices","Constant"),
+    term = names(label_names),
     estimate = reg_coef,
     std.error = boot_se,
     p.value = p_values,
@@ -205,11 +213,20 @@ bs_table <- function(reg_coef, #coefficients from the full model
     cs_day = glue("{round(cs_day)} [{round(cs_day_ci[1])}, {round(cs_day_ci[2])}]")
   )
   
+  cs_dat <- data.frame(
+    cs = cs,
+    cs_l = cs_ci[1],
+    cs_u = cs_ci[2],
+    cs_day = cs_day,
+    cs_day_l = cs_day_ci[1],
+    cs_day_u = cs_day_ci[2]
+  )
+  
   
   mod <- list(tidy=ti,glance=gl)
   class(mod) <- "modelsummary_list"
   
-  return(mod)
+  return(list(mod,cs_dat))
 }
 
 

@@ -32,6 +32,7 @@ if(comp["nodename"]=="Judes-MacBook-Pro-2.local"){
   folder.setup(slink="")#local setup
 } else {
   folder.setup(slink="/RSTOR/bayham/projects/tc_nps/inputs")
+  setwd("/data/jbuser/git_projects/tc_nps/")
 }
 
 

@@ -11,7 +11,7 @@ source("project_init.R")
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
   filter(primary==1)
 
-f_names <- list.files("analysis/inputs/compare_reg",full.names = TRUE) 
+f_names <- list.files("analysis/inputs/compare_reg/dem",full.names = TRUE) 
 m_names <- park_subset$code_dest
 
 df_list <- map(f_names,function(x){
@@ -20,15 +20,14 @@ df_list <- map(f_names,function(x){
 
 
 #Create dir to hold obs counts for each model
-if(!dir.exists("analysis/cache/nobs")) dir.create("analysis/cache/nobs")
-if(!dir.exists("analysis/cache/compare_regs")) dir.create("analysis/cache/compare_regs")
+dir_ifnot("analysis/cache/compare_regs")
 
 ###########
 #Start
-df=df_list[[12]]
-nm=m_names[12]
-walk2(df_list[c(12:31)],
-      m_names[c(12:31)],
+df=df_list[[1]]
+nm=m_names[1]
+walk2(df_list[c(1:31)],
+      m_names[c(1:31)],
       function(df,nm){
         
         coef_fname = paste0("analysis/cache/compare_regs/",nm,".rds")

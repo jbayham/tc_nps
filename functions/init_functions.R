@@ -46,4 +46,24 @@ folder.setup <- function(slink){
   return(NULL)
 }
 
+#Short function to create a dir if it does not exist
+dir_ifnot <- function(dir_name){
+  if(!dir.exists(dir_name)) dir.create(dir_name,recursive = T)
+}
+
+#Function to download and cache census files or load them if cached
+load_or_dl <- function(url,destdir){
+  #download.file(url = url,destfile = paste0(destdir,"/",basename(url)))
+  require(tools)
+  target_file <- paste0(destdir,"/",file_path_sans_ext(basename(url)),".rds")
+  
+  if(!file.exists(target_file)) {
+    temp <- read_delim(url,delim = "|")
+    saveRDS(temp,file = target_file)
+  } else {
+    temp <- readRDS(target_file)
+  }
+  
+  return(temp)
+}
 

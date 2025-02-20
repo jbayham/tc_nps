@@ -1,7 +1,7 @@
 #This script constructs a database of ACS datatables used in this analysis
 
 library(pacman)
-p_load(tidyverse,janitor,arrow,readxl)
+p_load(tidyverse,conflicted,janitor,arrow,readxl)
 
 conflicts_prefer(dplyr::filter)
 
@@ -10,59 +10,72 @@ source("project_init.R")
 ####################
 #Get ACS data from FTP
 
+dir_ifnot("build/cache/census")
+
+
+
+
 #Getting geo reference file used to subset tract data
-acs_geo_ref <- read_delim("https://www2.census.gov/programs-surveys/acs/summary_file/2022/table-based-SF/documentation/Geos20225YR.txt",
-                          delim = "|")
+acs_geo_ref <- load_or_dl(url="https://www2.census.gov/programs-surveys/acs/summary_file/2022/table-based-SF/documentation/Geos20225YR.txt",
+                          destdir = "build/cache/census")
 tract_subset <- acs_geo_ref %>%
   filter(!is.na(TRACT)) %>%
   select(GEO_ID)
 
 #Getting xwalk between 2010 and 2020 data
-xwalk <- read_delim("https://www2.census.gov/geo/docs/maps-data/data/rel2020/tract/tab20_tract20_tract10_natl.txt",
-                    delim = "|") %>%
+xwalk <- load_or_dl(url = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/tract/tab20_tract20_tract10_natl.txt",
+                    destdir = "build/cache/census") %>%
   clean_names() %>%
   select(geoid_tract_20,arealand_tract_20,areawater_tract_20,
          geoid_tract_10,arealand_tract_10,areawater_tract_10,
          arealand_part,areawater_part)
 
 
-yr_list=c(2022)
-yr=2022
+yr_list=c(2022,2023)
+yr=2023
 
 for(yr in yr_list){
   
   #base url for 5yr
   ftp_base <- paste0("https://www2.census.gov/programs-surveys/acs/summary_file/",yr,"/table-based-SF/data/5YRData/acsdt5y",yr)
   
+  #For each file, read in and cache
+  
+  
   #Population
-  pop_dat <- read_delim(paste0(ftp_base,"-b01001.dat"),
-                        delim = "|") %>%
+  pop_dat <- load_or_dl(url=paste0(ftp_base,"-b01001.dat"),
+                        destdir = "build/cache/census") %>%
     select(GEO_ID,total_pop = B01001_E001) %>% #select only total pop
     inner_join(tract_subset) 
   
   #Median Age
-  age_dat <- read_delim(paste0(ftp_base,"-b01002.dat"),
-                        delim = "|") %>%
+  age_dat <- load_or_dl(url=paste0(ftp_base,"-b01002.dat"),
+                        destdir = "build/cache/census") %>%
     select(GEO_ID,med_age = B01002_E001) %>% #select only total pop
     inner_join(tract_subset) 
   
   #Education - % bachelors
-  bach_dat <- read_delim(paste0(ftp_base,"-b06009.dat"),
-                         delim = "|") %>%
+  bach_dat <- load_or_dl(url=paste0(ftp_base,"-b06009.dat"),
+                         destdir = "build/cache/census") %>%
     select(GEO_ID,B06009_E001,B06009_E005,B06009_E006) %>% #select only total pop
     inner_join(tract_subset) %>%
     mutate(bach_perc = (B06009_E005+B06009_E006)/B06009_E001) %>%
     select(GEO_ID,bach_perc)
   
   #Median household income
-  med_hh_inc_dat <- read_delim(paste0(ftp_base,"-b19013.dat"),
-                               delim = "|") %>%
-    select(GEO_ID,med_inc = B19013_E001) %>% #select only total pop
+  # med_hh_inc_dat <- load_or_dl(url=paste0(ftp_base,"-b19013.dat"),
+  #                              delim = "|") %>%
+  #   select(GEO_ID,med_inc = B19013_E001) %>% #select only total pop
+  #   inner_join(tract_subset)
+  
+  med_inc_dat <- load_or_dl(url=paste0(ftp_base,"-b19301.dat"),
+                               destdir = "build/cache/census") %>%
+    select(GEO_ID,med_inc = B19301_E001) %>% #select only total pop
     inner_join(tract_subset)
   
   #Household size
-  hh_size_dat <- read_delim(paste0(ftp_base,"-b25010.dat"),
-                            delim = "|") %>%
+  hh_size_dat <- load_or_dl(url=paste0(ftp_base,"-b25010.dat"),
+                            destdir = "build/cache/census") %>%
     select(GEO_ID,hh_size = B25010_E001) %>% #select only total pop
     inner_join(tract_subset) 
   
@@ -70,7 +83,7 @@ for(yr in yr_list){
   tract_dat <- pop_dat %>%
     left_join(age_dat,by = join_by(GEO_ID)) %>%
     left_join(bach_dat,by = join_by(GEO_ID)) %>%
-    left_join(med_hh_inc_dat,by = join_by(GEO_ID)) %>%
+    left_join(med_inc_dat,by = join_by(GEO_ID)) %>%
     left_join(hh_size_dat,by = join_by(GEO_ID)) %>%
     mutate(GEO_ID = str_remove(GEO_ID,"1400000US")) %>%
     rename(geoid=GEO_ID)
@@ -84,7 +97,7 @@ for(yr in yr_list){
   #became. 
   #Map the data (2020 tracts) to the 2010 tracts reported by Advan
   xwalk_data <- xwalk %>%
-    inner_join(tract_data,by = c("geoid_tract_20"="geoid")) %>%
+    inner_join(tract_dat,by = c("geoid_tract_20"="geoid")) %>%
     mutate(weights = arealand_part/arealand_tract_10) %>%
     group_by(geoid_tract_10) %>%
     summarize(across(c(total_pop:hh_size),~sum(weights*.))) %>%

@@ -52,5 +52,6 @@ build/inputs
 build/cache
 analysis/inputs
 analysis/cache
+analysis/outputs
 *.Rproj
 *.DS_Store

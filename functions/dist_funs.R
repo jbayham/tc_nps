@@ -94,4 +94,31 @@ get_osrm_od <-
     
   }
 
+st_crow_flies <- function(df,
+                          fly_mph = (480+575)/2){
+  #Check if all destinations are the same
+  if(nrow(df)>1 & var(df$dest_lon)!=0) stop("Not all destinations are the same.")
+  #Set st_distance to use lwgeom for more accurate distance calculation
+  sf_use_s2(FALSE)
+  
+  #Origin points
+  orig <- df %>%
+    select(code_dest,tract,starts_with("orig")) %>%
+    st_as_sf(coords = c("orig_lon","orig_lat"),crs=4326)
+  
+  #Destination point
+  dest <- df[1,] %>%
+    select(code_dest,tract,starts_with("dest")) %>%
+    st_as_sf(coords = c("dest_lon","dest_lat"),crs=4326)
+  
+  #Calculate the distance
+  calc_dist <- as.vector(st_distance(x=dest,y=orig))
+  
+  #Convert to miles
+  out <- df %>%
+    mutate(f_distance = conv_unit(calc_dist,"m","mi"),
+           f_time = f_distance/fly_mph)
+  
+  return(out)
+}
 

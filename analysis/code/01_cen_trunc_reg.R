@@ -11,7 +11,7 @@ source("project_init.R")
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
   filter(primary==1)
 
-f_names <- list.files("analysis/inputs/compare_reg/dem",full.names = TRUE) 
+f_names <- list.files("analysis/inputs/compare_reg/nopred",full.names = TRUE) 
 m_names <- park_subset$code_dest
 
 df_list <- map(f_names,function(x){
@@ -20,7 +20,10 @@ df_list <- map(f_names,function(x){
 
 
 #Create dir to hold obs counts for each model
-dir_ifnot("analysis/cache/compare_regs")
+coef_dir_name="analysis/cache/compare_regs/nopred"
+dir_ifnot(coef_dir_name)
+bs_dir_name="analysis/cache/bs_runs/nopred"
+dir_ifnot(bs_dir_name)
 
 ###########
 #Start
@@ -30,8 +33,8 @@ walk2(df_list[c(1:31)],
       m_names[c(1:31)],
       function(df,nm){
         
-        coef_fname = paste0("analysis/cache/compare_regs/",nm,".rds")
-        bs_run_dir = paste0("analysis/cache/bs_runs/",nm)
+        coef_fname = paste0(coef_dir_name,"/",nm,".rds")
+        bs_run_dir = paste0(bs_dir_name,"/",nm)
         
         #if(any(coef_fname %in% list.files("analysis/cache",pattern = ".rds",full.names = TRUE))) next
         
@@ -87,7 +90,7 @@ walk2(df_list[c(1:31)],
         
         if(nrow(bs_runs)>=500) dir_delete(bs_run_dir)
         
-        saveRDS(bs_runs,paste0("analysis/cache/bs_runs/",nm,".rds"))
+        saveRDS(bs_runs,paste0(bs_dir_name,"/",nm,".rds"))
         
       })
 

@@ -165,6 +165,28 @@ list.files("build/cache/census_geo",full.names = TRUE) %>%
 
   
     
+#################################
+#Grabbing zipcode population for AE
 
+yr=2022
 
+geos <- readRDS("build/cache/census/Geos20225YR.rds")
 
+zips <- geos %>%
+  filter(!is.na(ZCTA5)) %>%
+  select(GEO_ID,ZCTA5,NAME)
+
+pop_dat_22 <- readRDS(paste0("build/cache/census/acsdt5y",2022,"-b01001.rds"))
+pop_dat_23 <- readRDS(paste0("build/cache/census/acsdt5y",2023,"-b01001.rds"))
+
+zcta_pop_2022 <- pop_dat_22 %>%
+  select(GEO_ID,pop_2022=B01001_E001) %>%
+  inner_join(zips,.,by="GEO_ID")
+
+zcta_pop_2023 <- pop_dat_23 %>%
+  select(GEO_ID,pop_2023=B01001_E001) %>%
+  inner_join(zips,.,by="GEO_ID")
+
+zcta_pop <- inner_join(zcta_pop_2022,zcta_pop_2023,by = join_by(GEO_ID, ZCTA5, NAME))
+
+saveRDS(zcta_pop,"build/cache/zcta_pop.rds")

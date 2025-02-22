@@ -113,8 +113,29 @@ travel_cost_calc <- function(pk,
   }
   
   #TC params - use chosen type and reassign variable name
-  tc_params <- fly_nsplit %>%
-    select(code_dest,tract,nsplit=all_of(nsplit),fly_prob=all_of(fly_prob))
+  if(fly_prob!=FALSE){
+    fly_param <- fly_nsplit %>%
+      select(code_dest,tract,fly_prob=all_of(fly_prob))
+  } else {
+    fly_param <- fly_nsplit %>%
+      select(code_dest,tract) %>%
+      mutate(fly_prob=fly_prob)
+  }
+  
+  if(is.character(nsplit)){
+    if(!(nsplit %in% names(fly_nsplit))) stop("nsplit is not a valid variable name")
+    nsplit_param <- fly_nsplit %>%
+      select(code_dest,tract,nsplit=all_of(nsplit))
+  } else {
+    if(!is.numeric(nsplit)) stop("nsplit is not numeric")
+    nsplit_param <- fly_nsplit %>%
+      select(code_dest,tract) %>%
+      mutate(nsplit=nsplit)
+      
+  }
+  
+  
+
   
   #Filter by date to match survey, deal with truncation, aggregate across parks
   visitors <- parks_home_tract %>%
@@ -141,7 +162,8 @@ travel_cost_calc <- function(pk,
     left_join(tract_devices_sub,by = c("tract")) %>%
     left_join(census_xwalk,by = c("tract")) %>%
     left_join(trav_dist_time,by = c("code_dest","tract")) %>%
-    left_join(tc_params,by = c("code_dest","tract")) %>%
+    left_join(fly_param,by = c("code_dest","tract")) %>%
+    left_join(nsplit_param,by = c("code_dest","tract")) %>%
     mutate(site_fee = case_when(
       fee_type == "pv" ~ site_fee/nsplit,
       fee_type == "pp" ~ site_fee,
@@ -170,18 +192,31 @@ travel_cost_calc <- function(pk,
            cost_f_opp = 2*(cost_opp*f_time),
            cost_f_travel = 2*f_tc*f_distance,
            cost_f_total = cost_f_opp + cost_f_travel,
-           cost_total_weighted = ((1-fly_prob)*cost_d_total + fly_prob*cost_f_total) + site_fee,
            drange=date_range) 
+  
+  if(fly_prob==FALSE){
+    reg_final <- reg_final %>%
+      rowwise() %>%
+      mutate(cost_total_weighted = min(cost_d_total,cost_f_total) + site_fee)
+  } else {
+    reg_final <- reg_final %>%
+      mutate(cost_total_weighted = ((1-fly_prob)*cost_d_total + fly_prob*cost_f_total) + site_fee)
+  }
+
   
   return(list(reg_final,unmatched))
 }
 
-# check <- travel_cost_calc(park_code = "AZRU")
+
+check <- travel_cost_calc(park_code = "AZRU",fly_prob = F)
+summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
+check <- travel_cost_calc(park_code = "AZRU")
+summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
 # check <- travel_cost_calc(pk = "zzz-222@5qf-fyv-zfz")
 # check <- travel_cost_calc(park_code = "AZRU",dates = (as_date("2019-01-01") %--% as_date("2019-06-30")))
 
 #################
-#Dataset for comparison with SEM data
+#Dataset for comparison with SEM data (using fly prob and nsplit predictions)
 
 pk_list <- unique(park_subset$placekey)
 dir_name = "analysis/inputs/compare_reg/dem"
@@ -203,6 +238,30 @@ pk_list %>%
     #write_csv(paste0("analysis/inputs/",df$um_fname))
   })
 
+##########################################
+#Dataset for comparison with SEM data (using fly prob and nsplit predictions)
+
+pk_list <- unique(park_subset$placekey)
+dir_name = "analysis/inputs/compare_reg/nopred"
+dir_ifnot(dir_name)
+
+pk_list %>%
+  walk(function(x){
+    final <- travel_cost_calc(
+      pk=x,
+      fly_prob = F,
+      nsplit = 2) 
+    
+    fname = paste0(final[[1]]$code_dest[1],"_",int_start(final[[1]]$drange[1]),"-",int_end(final[[1]]$drange[1]),".rds")
+    
+    final[[1]] %>%
+      saveRDS(paste0(dir_name,"/reg_dat_",fname))
+    
+    #final[[2]] %>%
+    #write_csv(paste0("analysis/inputs/",df$um_fname))
+  })
+
+##############################
 #For time series
 #construct all dataset combinations
 

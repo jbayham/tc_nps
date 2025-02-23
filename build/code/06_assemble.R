@@ -219,7 +219,7 @@ summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
 #Dataset for comparison with SEM data (using fly prob and nsplit predictions)
 
 pk_list <- unique(park_subset$placekey)
-dir_name = "analysis/inputs/compare_reg/dem"
+dir_name = "analysis/inputs/regs_dem"
 dir_ifnot(dir_name)
 
 pk_list %>%
@@ -242,7 +242,7 @@ pk_list %>%
 #Dataset for comparison with SEM data (using fly prob and nsplit predictions)
 
 pk_list <- unique(park_subset$placekey)
-dir_name = "analysis/inputs/compare_reg/nopred"
+dir_name = "analysis/inputs/regs_nopred"
 dir_ifnot(dir_name)
 
 pk_list %>%

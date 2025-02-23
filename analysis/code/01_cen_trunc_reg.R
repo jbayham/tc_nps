@@ -10,9 +10,16 @@ source("project_init.R")
 #Parks reference
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
   filter(primary==1)
-
-f_names <- list.files("analysis/inputs/compare_reg/nopred",full.names = TRUE) 
 m_names <- park_subset$code_dest
+
+yr_list = c(2019:2023)
+yr=yr_list[1]
+
+for(yr in yr_list){
+
+#f_names <- list.files("analysis/inputs/compare_reg/nopred",full.names = TRUE) 
+f_names <- list.files(paste0("analysis/inputs/date_",yr,"-08-01"),full.names = TRUE) 
+
 
 df_list <- map(f_names,function(x){
   readRDS(x)
@@ -20,17 +27,20 @@ df_list <- map(f_names,function(x){
 
 
 #Create dir to hold obs counts for each model
-coef_dir_name="analysis/cache/compare_regs/nopred"
+#coef_dir_name=paste0("analysis/cache/regs_nopred")
+#bs_dir_name=paste0("analysis/cache/bs_runs/regs_nopred")
+coef_dir_name=paste0("analysis/cache/date_",yr,"-08-01")
+bs_dir_name=paste0("analysis/cache/bs_runs/date_",yr,"-08-01")
+
 dir_ifnot(coef_dir_name)
-bs_dir_name="analysis/cache/bs_runs/nopred"
 dir_ifnot(bs_dir_name)
 
 ###########
 #Start
 df=df_list[[1]]
 nm=m_names[1]
-walk2(df_list[c(1:31)],
-      m_names[c(1:31)],
+walk2(df_list,
+      m_names,
       function(df,nm){
         
         coef_fname = paste0(coef_dir_name,"/",nm,".rds")
@@ -94,16 +104,16 @@ walk2(df_list[c(1:31)],
         
       })
 
-
+}
 ###################
 
-check <- list.files("analysis/cache/bs_runs/EVER",full.names = T) %>%
-  map(readRDS) %>%
-  bind_rows() 
-
-hist(check[,2])
-
-check_mean = summarize(check,across(everything(),mean))
-
-check
-1/check[1,2]
+# check <- list.files("analysis/cache/bs_runs/EVER",full.names = T) %>%
+#   map(readRDS) %>%
+#   bind_rows() 
+# 
+# hist(check[,2])
+# 
+# check_mean = summarize(check,across(everything(),mean))
+# 
+# check
+# 1/check[1,2]

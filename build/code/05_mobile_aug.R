@@ -103,7 +103,7 @@ saveRDS(prob_df,"build/cache/fly_nsplit.rds")
 #No Dems check threshold
 ae_flight_mod_nodem <- readRDS("build/inputs/AE/Reg_Fly/reg_fly_nodem_allsites.rds")
 
-
+old_df <- ae_flight_mod_nodem$model
 
 summary(driving$d_miles_oneway)
 
@@ -135,6 +135,23 @@ summary(lm(trav_dist ~ trav_time, data = raw_driving))
 
 ###########################
 #Tables
+shell <- vector("list")
+shell$`Fly=1 Dem` <- readRDS("build/inputs/AE/Reg_Fly/reg_fly_dem_allsites.rds")
+shell$`Fly=1 NoDem` <- readRDS("build/inputs/AE/Reg_Fly/reg_fly_nodem_allsites.rds")
+shell$`NSplit Dem` <- readRDS("build/inputs/AE/Reg_nSplit/reg_nsplit_pois_dem_allsites.rds")
+shell$`NSplit NoDem` <- readRDS("build/inputs/AE/Reg_nSplit/reg_nsplit_pois_nodem_allsites.rds")
 
-modelsummary(list(ae_fly_dem,ae_fly_dem_all,ae_fly_nodem,ae_fly_nodem_all),
-             stars = T)
+
+
+modelsummary(shell,
+             stars = T,
+             fmt=8,
+             #shape = response ~ model,
+             coef_map = c("(Intercept)"="Constant",
+                          "d_miles_oneway"="Distance",
+                          "year"="Year=2023",
+                          "income"="Income",
+                          "age"="Age",
+                          "householdsize"="HH Size"),
+             gof_map = c("nobs"),
+             output = "analysis/outputs/mobile_aug.xlsx")

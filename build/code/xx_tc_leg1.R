@@ -1,24 +1,27 @@
 #This script queries OSRM to get origin destination travel time and distance
 #from all census tracts and zip codes to airports
 
-#install.packages("mapsapi")
 library(pacman)
-p_load(tidyverse,sf,mapsapi,janitor,measurements,progress,osrm,furrr,arrow)
+p_load(tidyverse,sf,janitor,measurements,progress,osrm,furrr,arrow,here)
 
-source("project_init.R")
+message("here() root: ", here::here())
+i_am("build/code/xx_tc_leg1.R")
+source(here("project_init.R"))
+
+# Read in data of all unique origins
+census_geo <- readRDS(here("build", "cache", "census_geo_points_2019.rds")) %>%
+  rename(tract = geoid)
+
+# Read in airports
+airports_geo <- read_csv(here("build", "cache", "airports_geo.csv"))
 
 
-
-#Read in data of all unique origins
-census_geo <- readRDS("build/cache/census_geo_points_2019.rds") %>%
-  rename(tract=geoid)
-
-#Read in airports
-airports_geo <- read_csv("build/cache/airports_geo.csv")
-
-
-
-plan(multisession(workers = 4))  # Or use plan(multicore) on Linux
+if(interactive()){
+  plan(multisession(workers = 10)) 
+} else {
+  plan(multicore(workers = 10))
+}
+ 
 
 
 # Set OSRM server
@@ -27,11 +30,12 @@ options(osrm.server = "http://darecompute-01.aggie.colostate.edu:5000/", osrm.pr
 # Break census tracts into chunks of 450
 census_chunks <- split(census_geo, ceiling(seq_along(census_geo$tract) / 450))
 
-airport_row=airports_geo[1,]
-chunk=census_chunks[[1]]
-i=1
+# airport_row=airports_geo[1,]
+# chunk=census_chunks[[1]]
+# i=1
 
-dir_ifnot("build/cache/fly/leg1")
+dir_ifnot(here("build", "cache", "fly", "leg1"))
+
 # Function to calculate and cache OD matrix for one airport
 process_airport <- function(airport_row) {
   airport_code <- airport_row$code
@@ -46,7 +50,7 @@ process_airport <- function(airport_row) {
   
   future_walk2(census_chunks, seq_along(census_chunks), function(chunk, i) {
     chunk_id <- paste0("chunk_", sprintf("%03d", i))
-    out_path <- file.path("build/cache/fly/leg1", paste0(airport_code, "_", chunk_id, ".parquet"))
+    out_path <- here("build", "cache", "fly", "leg1", paste0(airport_code, "_", chunk_id, ".parquet"))
     
     if (file.exists(out_path)) {
       message("Skipping cached file: ", out_path)

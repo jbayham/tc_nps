@@ -190,3 +190,34 @@ zcta_pop_2023 <- pop_dat_23 %>%
 zcta_pop <- inner_join(zcta_pop_2022,zcta_pop_2023,by = join_by(GEO_ID, ZCTA5, NAME))
 
 saveRDS(zcta_pop,"build/cache/zcta_pop.rds")
+
+###########################
+#downloading and processing all 2020 zipcode geometries
+
+fname=paste0("build/cache/census_geo/tl_2024_us_zcta520")
+
+#Downloading tiger file
+if(!file.exists(paste0(fname,".zip"))){
+  download.file(url = paste0("https://www2.census.gov/geo/tiger/TIGER2024/ZCTA520/tl_2024_us_zcta520.zip"),
+                destfile = paste0(fname,".zip"))
+}
+
+#Unzipping
+if(!file.exists(paste0(fname,".shp"))){
+  unzip(zipfile = paste0(fname,".zip"),exdir = "build/cache/census_geo/")
+}
+
+#Read in and make multipolygon
+tig_temp <- st_read(paste0(fname,".shp")) %>%
+  clean_names() %>%
+  select(geoid20,aland20,awater20) %>%
+  st_cast('MULTIPOLYGON')
+
+tig_temp %>%
+  st_centroid(of_largest_polygon = TRUE) %>%
+  sfc_as_cols(.,names = c("longitude","latitude")) %>%
+  st_drop_geometry() %>%
+  saveRDS(file = "build/cache/census_geo_zip_2024.rds")
+
+
+

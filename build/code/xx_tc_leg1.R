@@ -1,96 +1,77 @@
-#This script queries OSRM to get origin destination travel time and distance
-#from all census tracts and zip codes to airports
-
 library(pacman)
-p_load(tidyverse,sf,janitor,measurements,progress,osrm,furrr,arrow,here)
+p_load(tidyverse, sf, janitor, measurements, progress, osrm, furrr, arrow, here)
 
 source(here("project_init.R"))
 
-# Read in data of all unique origins
-# census_geo <- readRDS(here("build", "cache", "census_geo_points_2019.rds")) %>%
-#   rename(tract = geoid)
+# Choose origin type: "tract" or "zip"
+origin_type <- "zip"  # Change to "tract" if using census tracts
 
-census_geo <- readRDS(here("build", "cache", "census_geo_zip_2024.rds")) %>%
-  rename(zip = geoid20)
+# Load appropriate origin file
+origin_geo <- switch(origin_type,
+                     "tract" = readRDS(here("build", "cache", "census_geo_points_2019.rds")) %>% rename(origin_id = geoid),
+                     "zip"   = readRDS(here("build", "cache", "census_geo_zip_2024.rds")) %>% rename(origin_id = geoid20))
 
-# Read in airports
+# Load airport data
 airports_geo <- read_csv(here("build", "cache", "airports_geo.csv"))
-
-###########
-#Start where left off
-#airports_geo = airports_geo[(which(airports_geo$code=="DAY")-1):nrow(airports_geo),]
-
-############
-
-
-if(interactive()){
-  plan(multisession(workers = 10)) 
-} else {
-  plan(multicore(workers = 10))
-}
- 
-
 
 # Set OSRM server
 options(osrm.server = "http://darecompute-01.aggie.colostate.edu:5000/", osrm.profile = "car")
 
-# Break census tracts into chunks of 450
-#census_chunks <- split(census_geo, ceiling(seq_along(census_geo$tract) / 450))
-census_chunks <- split(census_geo, ceiling(seq_along(census_geo$zip) / 450))
+# Set parallel plan
+if (interactive()) {
+  plan(multisession(workers = 10)) 
+} else {
+  plan(multicore(workers = 10))
+}
 
-airport_row=airports_geo[1,]
-chunk=census_chunks[[1]]
-i=1
+# Determine chunking
+if (nrow(origin_geo) > 450) {
+  chunk_size <- 450
+  origin_chunks <- split(origin_geo, ceiling(seq_along(origin_geo$origin_id) / chunk_size))
+} else {
+  origin_chunks <- list(origin_geo)
+}
 
-#dir_ifnot(here("build", "cache", "fly", "tract_leg1"))
-dir_ifnot(here("build", "cache", "fly", "ztca_leg1"))
+# Set output directory based on origin_type
+out_dir <- here("build", "cache", "fly", paste0(origin_type, "_leg1"))
+dir_ifnot(out_dir)
 
-# Function to calculate and cache OD matrix for one airport
+# Function to process one airport
 process_airport <- function(airport_row) {
   airport_code <- airport_row$code
   airport_id <- paste0("dest_", airport_code)
-  
-  dest_coords <- tibble(
-    lon = airport_row$lon,
-    lat = airport_row$lat
-  )
+  dest_coords <- tibble(lon = airport_row$lon, lat = airport_row$lat)
   
   message("Processing airport: ", airport_code)
   
-  future_walk2(census_chunks, seq_along(census_chunks), function(chunk, i) {
+  future_walk2(origin_chunks, seq_along(origin_chunks), function(chunk, i) {
     chunk_id <- paste0("chunk_", sprintf("%03d", i))
-    # out_path <- here("build", "cache", "fly", "tract_leg1", paste0(airport_code, "_", chunk_id, ".parquet"))
-    out_path <- here("build", "cache", "fly", "ztca_leg1", paste0(airport_code, "_", chunk_id, ".parquet"))
+    out_path <- file.path(out_dir, paste0(airport_code, "_", chunk_id, ".parquet"))
     
     if (file.exists(out_path)) {
       message("Skipping cached file: ", out_path)
       return(NULL)
     }
     
-    src_coords <- chunk %>%
-      transmute(lon = longitude, lat = latitude)
+    src_coords <- chunk %>% transmute(lon = longitude, lat = latitude)
     
     result <- tryCatch({
-      osrmTable(src = src_coords, 
-                dst = dest_coords,
-                measure = c("duration","distance"))    
-      }, error = function(e) {
+      osrmTable(src = src_coords, dst = dest_coords, measure = c("duration", "distance"))
+    }, error = function(e) {
       message("Error: ", e$message)
       return(NULL)
     })
     
     if (!is.null(result)) {
       dist_df <- tibble(
-        #tract = chunk$tract,
-        zip = chunk$zip,
+        origin_id = chunk$origin_id,
         airport = airport_code,
-        duration_hr = conv_unit(as.vector(result$durations),from = "min",to = "hour"),
-        distance_mi = conv_unit(as.vector(result$distances),from = "m", to = "mi")
+        duration_hr = conv_unit(as.vector(result$durations), from = "min", to = "hour"),
+        distance_mi = conv_unit(as.vector(result$distances), from = "m", to = "mi")
       ) %>%
-        #bind_cols(rename(result$sources,tract_lon=lon,tract_lat=lat)) %>%
-        bind_cols(rename(result$sources,zip_lon=lon,zip_lat=lat)) %>%
-        add_column(airport_lon=result$destinations$lon,
-                   airport_lat=result$destinations$lat)
+        bind_cols(rename(result$sources, origin_lon = lon, origin_lat = lat)) %>%
+        add_column(airport_lon = result$destinations$lon,
+                   airport_lat = result$destinations$lat)
       
       write_parquet(dist_df, out_path)
       message("Wrote: ", out_path)
@@ -98,5 +79,5 @@ process_airport <- function(airport_row) {
   })
 }
 
-# Process all airports
+# Run the process
 walk(split(airports_geo, seq(nrow(airports_geo))), process_airport)

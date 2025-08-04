@@ -185,10 +185,10 @@ travel_cost_calc <- function(pk,
   reg_final <- reg_data %>%
     filter(!if_any(everything(),list(is.na,is.nan))) %>%
     mutate(cost_opp = wage_frac*(income/work_hours), #opportunity cost of time $/hour
-           hotelnights = floor(osrm_ow_hrs / 12) * 2, #hotel stays for long trips assuming 12 hour driving days
+           hotelnights = 2*floor(osrm_ow_hrs / 12) * hr, #hotel stays for long trips assuming 12 hour driving days
            cost_d_opp = 2*(cost_opp*osrm_ow_hrs),  #travel cost = 1/3 hourly wage (annual salary = hh_inc/2000) + .59 * miles; round trip so 2x mileage
            cost_d_travel = 2*d_tc*osrm_ow_miles/nsplit,  #multiplying by 2 for round trip; without opportunity cost of time
-           cost_d_total = cost_d_opp + cost_d_travel,
+           cost_d_total = cost_d_opp + cost_d_travel + hotelnights,
            cost_f_opp = 2*(cost_opp*f_time),
            cost_f_travel = 2*f_tc*f_distance,
            cost_f_total = cost_f_opp + cost_f_travel,
@@ -239,7 +239,7 @@ pk_list %>%
   })
 
 ##########################################
-#Dataset for comparison with SEM data (using fly prob and nsplit predictions)
+#Dataset for comparison with SEM data (using fly prob and nsplit=2)
 
 pk_list <- unique(park_subset$placekey)
 dir_name = "analysis/inputs/regs_nopred"

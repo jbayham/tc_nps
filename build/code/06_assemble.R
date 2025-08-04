@@ -47,6 +47,25 @@ fly_nsplit <- readRDS("build/cache/fly_nsplit.rds") %>%
 tract_devices <- read_csv("build/inputs/tract_devices.csv") %>%
   mutate(measure_date = as_date(paste0(year,"-",mon,"-01")))
 
+#Read in cached leg1: census tract to airports
+leg1_ds <- readRDS("build/cache/tract_to_airpot10.rds") %>%
+  select(tract,airport1_code=airport,duration_hr1=duration_hr,distance_mi1=distance_mi) %>%
+  inner_join(distinct(parks_home_tract,tract),by = join_by(tract))
+
+#Read in leg3: airports to final destinations
+leg3_ds <- open_dataset("build/cache/fly/leg3") %>%
+  select(code_dest,airport2_code=airport,duration_hr3=duration_hr,distance_mi3=distance_mi) %>%
+  collect() %>%
+  group_by(code_dest) %>%
+  slice_min(order_by = distance_mi3,n=10,with_ties = FALSE) %>% #subsetting only the top 10 nearest airports to park
+  ungroup()
+
+#Read in fare estimates between all airports
+airfare_df <- read_csv("build/cache/airfares.csv") %>%
+  select(airport1_code,airport2_code,fare=flyfare_predict_2022,nsmiles) %>%
+  mutate(fly_time = nsmiles/528) #distance divided by speed of plane
+
+
 ##############################
 #Cost params
 wage_frac = 1/3
@@ -99,7 +118,7 @@ travel_cost_calc <- function(pk,
   
   #Setting cost params that vary by year
   d_tc = AAA[as.character(park_temp$year[1])]
-  f_tc = fly_USDpermile[as.character(park_temp$year[1])]
+  #f_tc = fly_USDpermile[as.character(park_temp$year[1])]
   hr = hotelrate[as.character(park_temp$year[1])]
   fee_type=park_temp$fee_type[1]
   site_fee=park_temp$site_fee[1]
@@ -155,13 +174,40 @@ travel_cost_calc <- function(pk,
     summarize(residing = mean(residing,na.rm = T)) %>%
     ungroup()
   
+  #Merge the flight and drive distance and time with socioeconomic data and calculate total flight cost
+  air_df <- leg1_ds %>%
+    filter(tract %in% visitors$tract) %>%
+    inner_join(airfare_df,by=c("airport1_code"),relationship = "many-to-many") %>%
+    inner_join(filter(leg3_ds,code_dest==park_temp$code_dest),
+               by=c("airport2_code"),relationship = "many-to-many") %>%
+    left_join(census_xwalk, by = "tract") %>%
+    left_join(nsplit_param,by = c("code_dest","tract")) %>%
+    mutate(
+      wage_rate = income / work_hours,
+      cost_opp_hr = wage_frac * wage_rate,
+      cost_drive = 2 * (distance_mi1 + distance_mi3) * d_tc/nsplit,
+      travel_time = duration_hr1 + duration_hr3 + fly_time,
+      hotelnights = 2*floor(travel_time / 12) * hr, #hotel stays for long trips assuming 12 hour driving days
+      cost_time = 2 * cost_opp_hr * travel_time + hotelnights,
+      cost_fly = 2 * fare,
+      total_flight_cost = cost_drive + cost_time + cost_fly
+    )
+  
+  #Identify the minimum route cost across flight options
+  best_routes <- air_df %>%
+    group_by(tract) %>%
+    slice_min(order_by = total_flight_cost, n = 1) %>%
+    ungroup() %>%
+    drop_na() %>%
+    select(tract, total_flight_cost)
   
   
   #Join with census tract data (income, age, ...)
   reg_data <- visitors %>%
     left_join(tract_devices_sub,by = c("tract")) %>%
     left_join(census_xwalk,by = c("tract")) %>%
-    left_join(trav_dist_time,by = c("code_dest","tract")) %>%
+    left_join(trav_dist_time %>% select(-c(f_distance,f_time)),by = c("code_dest","tract")) %>%
+    left_join(best_routes,by = c("tract")) %>%
     left_join(fly_param,by = c("code_dest","tract")) %>%
     left_join(nsplit_param,by = c("code_dest","tract")) %>%
     mutate(site_fee = case_when(
@@ -171,7 +217,7 @@ travel_cost_calc <- function(pk,
     ))
   
   
-  #Keep record of recods los in join
+  #Keep record of records lost in join
   unmatched <- reg_data %>%
     filter(if_any(everything(),list(is.na,is.nan)))
   
@@ -189,18 +235,18 @@ travel_cost_calc <- function(pk,
            cost_d_opp = 2*(cost_opp*osrm_ow_hrs),  #travel cost = 1/3 hourly wage (annual salary = hh_inc/2000) + .59 * miles; round trip so 2x mileage
            cost_d_travel = 2*d_tc*osrm_ow_miles/nsplit,  #multiplying by 2 for round trip; without opportunity cost of time
            cost_d_total = cost_d_opp + cost_d_travel + hotelnights,
-           cost_f_opp = 2*(cost_opp*f_time),
-           cost_f_travel = 2*f_tc*f_distance,
-           cost_f_total = cost_f_opp + cost_f_travel,
+           #cost_f_opp = 2*(cost_opp*f_time),
+           #cost_f_travel = 2*f_tc*f_distance,
+           #cost_f_total = cost_f_opp + cost_f_travel,
            drange=date_range) 
   
   if(fly_prob==FALSE){
     reg_final <- reg_final %>%
       rowwise() %>%
-      mutate(cost_total_weighted = min(cost_d_total,cost_f_total) + site_fee)
+      mutate(cost_total_weighted = min(cost_d_total,total_flight_cost) + site_fee)
   } else {
     reg_final <- reg_final %>%
-      mutate(cost_total_weighted = ((1-fly_prob)*cost_d_total + fly_prob*cost_f_total) + site_fee)
+      mutate(cost_total_weighted = ((1-fly_prob)*cost_d_total + fly_prob*total_flight_cost) + site_fee)
   }
 
   

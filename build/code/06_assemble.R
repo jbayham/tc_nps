@@ -185,10 +185,10 @@ travel_cost_calc <- function(pk,
     mutate(
       wage_rate = income / work_hours,
       cost_opp_hr = wage_frac * wage_rate,
-      cost_drive = 2 * (distance_mi1 + distance_mi3) * d_tc/nsplit,
       travel_time = duration_hr1 + duration_hr3 + fly_time,
-      hotelnights = 2*floor(travel_time / 12) * hr, #hotel stays for long trips assuming 12 hour driving days
-      cost_time = 2 * cost_opp_hr * travel_time + hotelnights,
+      hotelnights = 2*floor(travel_time / 12) * hr, #hotel stays for long trips assuming 12 hour travel days
+      cost_time = 2 * (cost_opp_hr * travel_time + hotelnights),
+      cost_drive = 2 * (distance_mi1 + distance_mi3) * d_tc/nsplit,
       cost_fly = 2 * fare,
       total_flight_cost = cost_drive + cost_time + cost_fly
     )

@@ -1,7 +1,7 @@
 #This script assembles the dataset for the cell TCM
 
 library(pacman)
-p_load(tidyverse,conflicted,readxl)
+p_load(tidyverse,conflicted,readxl,arrow)
 
 source("project_init.R")
 
@@ -256,84 +256,81 @@ travel_cost_calc <- function(pk,
 
 check <- travel_cost_calc(park_code = "AZRU",fly_prob = F)
 summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
-check <- travel_cost_calc(park_code = "AZRU")
-summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
 # check <- travel_cost_calc(pk = "zzz-222@5qf-fyv-zfz")
 # check <- travel_cost_calc(park_code = "AZRU",dates = (as_date("2019-01-01") %--% as_date("2019-06-30")))
 
-#################
-#Dataset for comparison with SEM data (using fly prob and nsplit predictions)
+################
+# Define modeling configurations for travel cost calculation
+# Each row corresponds to a distinct modeling scenario:
+# - fly_prob: name of column used to impute probability of flying, or FALSE to disable
+# - nsplit: name of column or constant for number of people splitting costs
+# - suffix: identifier used to label the output directory
+# - time_series: TRUE if we want to generate a time series of datasets
+configs <- tibble(
+  fly_prob    = list("fly_prob_dem", "fly_prob_nodem", FALSE, "fly_prob_dem"),
+  nsplit      = list("nsplit_dem", "nsplit_nodem", 2, "nsplit_dem"),
+  suffix      = c("dem", "nodem", "nopred", "dem"),
+  time_series = c(FALSE, FALSE, FALSE, TRUE)
+)
 
-pk_list <- unique(park_subset$placekey)
-dir_name = "analysis/inputs/regs_dem"
-dir_ifnot(dir_name)
 
-pk_list %>%
-  walk(function(x){
-    final <- travel_cost_calc(
-      pk=x,
-      fly_prob = "fly_prob_dem",
-      nsplit = "nsplit_dem") 
-    
-    fname = paste0(final[[1]]$code_dest[1],"_",int_start(final[[1]]$drange[1]),"-",int_end(final[[1]]$drange[1]),".rds")
-    
-    final[[1]] %>%
-      saveRDS(paste0(dir_name,"/reg_dat_",fname))
-    
-    #final[[2]] %>%
-    #write_csv(paste0("analysis/inputs/",df$um_fname))
-  })
-
-##########################################
-#Dataset for comparison with SEM data (using fly prob and nsplit=2)
-
-pk_list <- unique(park_subset$placekey)
-dir_name = "analysis/inputs/regs_nopred"
-dir_ifnot(dir_name)
-
-pk_list %>%
-  walk(function(x){
-    final <- travel_cost_calc(
-      pk=x,
-      fly_prob = F,
-      nsplit = 2) 
-    
-    fname = paste0(final[[1]]$code_dest[1],"_",int_start(final[[1]]$drange[1]),"-",int_end(final[[1]]$drange[1]),".rds")
-    
-    final[[1]] %>%
-      saveRDS(paste0(dir_name,"/reg_dat_",fname))
-    
-    #final[[2]] %>%
-    #write_csv(paste0("analysis/inputs/",df$um_fname))
-  })
-
-##############################
-#For time series
-#construct all dataset combinations
-
-dlist <- tibble(sample_end = seq.Date(from=as_date("2020-07-01"),to=as_date("2024-07-01"),by = "1 year")) %>%
-  mutate(sample_start = sample_end - months(11),
-         drange = sample_start %--% sample_end) 
-
-for(i in 1:nrow(dlist)){
-  dname = paste0("analysis/inputs/date_",dlist$sample_start[i])
-  dir_ifnot(dir_name = dname)
+# Loop over model configurations and time windows
+walk(seq_len(nrow(configs)), function(j) {
+  fly  <- configs$fly_prob[[j]]
+  split <- configs$nsplit[[j]]
+  suffix <- configs$suffix[[j]]
+  time_series <- configs$time_series[[j]]
   
-  pk_list <- unique(park_subset$placekey)
+  # Create a table of date ranges (trailing 12-month windows)
+  # Only used if time_series = TRUE for the current config
+  date_ranges <- if (time_series) {
+    tibble(sample_end = seq(as_date("2020-07-01"), as_date("2024-07-01"), by = "1 year")) %>%
+      mutate(
+        sample_start = sample_end - months(11),
+        drange = sample_start %--% sample_end
+      )
+  } else {
+    tibble(drange = NA)
+  }
   
-  walk(pk_list,function(x){
-    final <- travel_cost_calc(
-      pk=x,
-      dates = dlist$drange[i],
-      fly_prob = "fly_prob_dem",
-      nsplit = "nsplit_dem") 
+  # Loop over each date window (or a single pass if time_series = FALSE)
+  walk(seq_len(nrow(date_ranges)), function(i) {
+    dr <- date_ranges$drange[i]
     
-    fname = paste0(final[[1]]$code_dest[1],"_",int_start(final[[1]]$drange[1]),"-",int_end(final[[1]]$drange[1]),".rds")
+    # Define output directory based on modeling choice and date
+    dir_name <- if (time_series) {
+      paste0("analysis/inputs/date_", int_start(dr))  # e.g., date_2020-07-01
+    } else {
+      paste0("analysis/inputs/regs_", suffix)         # e.g., regs_dem, regs_nopred
+    }
     
-    final[[1]] %>%
-      saveRDS(paste0(dname,"/reg_dat_",fname))
+    dir_ifnot(dir_name)  # Create output directory if it doesn't exist
+    
+    pk_list <- unique(park_subset$placekey)  # List of park destinations
+    
+    
+    # Loop over each park and run travel cost calculation
+    walk(pk_list, function(pk) {
+      # Conditionally include the date argument only when relevant
+      final <- if (!is.na(dr)) {
+        travel_cost_calc(pk = pk, fly_prob = fly, nsplit = split, dates = dr)
+      } else {
+        travel_cost_calc(pk = pk, fly_prob = fly, nsplit = split)
+      }
+      
+      # Construct output filename: e.g., CARE_2020-07-01_2021-06-30.rds
+      fname <- paste0(
+        final[[1]]$code_dest[1], "_",
+        int_start(final[[1]]$drange[1]), "-", int_end(final[[1]]$drange[1]),
+        ".rds"
+      )
+      
+      # Save the first element of the result (regression dataset) to disk
+      saveRDS(final[[1]], file = file.path(dir_name, paste0("reg_dat_", fname)))
+    })
   })
-  
-}
+})
+
+
 
 

@@ -1,7 +1,7 @@
 #This script assembles the dataset for the cell TCM
 
 library(pacman)
-p_load(tidyverse,readxl,janitor,rvest)
+p_load(tidyverse,readxl,janitor,rvest,scales,fixest)
 
 source("project_init.R")
 
@@ -54,41 +54,35 @@ monthly_data <- all_data |>
     year = as.integer(fiscal_year)
   )
 
-# Summarize national average lodging rate by year and month
-avg_by_year_month <- monthly_data |>
-  filter(!is.na(lodging_rate), is.numeric(lodging_rate)) |>
-  group_by(year, month, measure_date = make_date(year, month, 1)) |>
-  summarise(national_avg_rate = mean(lodging_rate, na.rm = TRUE), .groups = "drop")
 
-# avg_by_month <- monthly_data |>
-#   filter(!is.na(lodging_rate), is.numeric(lodging_rate)) |>
-#   group_by(year, month, measure_date = make_date(year, month, 1)) |>
-#   summarise(national_avg_rate = mean(lodging_rate, na.rm = TRUE), .groups = "drop")
+fe_mod <- feols(lodging_rate ~ factor(month) | year + zip,
+                data = monthly_data)
+
+summary(fe_mod)
+etable(fe_mod)
+
+fes <- fixef(fe_mod)
+
+as.data.frame(fes$year) %>%
+  rename(rates=1) %>%
+  rownames_to_column(var="year") %>%
+  ggplot(aes(x=year,y=rates)) +
+  geom_point(size=2) +
+  scale_y_continuous(labels = label_dollar(),limits = c(135,160)) +
+  theme_bw(base_size = 15) +
+  labs(x=NULL,y="GSA Lodging Rates")
+
+ggsave("analysis/outputs/gsa_rates_year.png")
+
+as.data.frame(fes$zip) %>%
+  rename(rates=1) %>%
+  ggplot(aes(x=rates)) +
+  geom_histogram(binwidth = 15) +
+  theme_bw(base_size = 15) +
+  labs(x="Scaled GSA Lodging Rates",y="Frequency")
+  
+ggsave("analysis/outputs/gsa_rates_zip.png")
+
+sum(fes$zip<0)/length(fes$zip)
 
 
-
-#Construct annual average to deduct from monthly
-annual_rate <- monthly_data %>%
-  filter(!is.na(lodging_rate), is.numeric(lodging_rate)) |>
-  group_by(year) |>
-  summarise(national_annual_avg_rate = mean(lodging_rate, na.rm = TRUE), .groups = "drop") 
-
-#Create seasonal ahla adjustment
-seasonal_index <- avg_by_year_month %>%
-  inner_join(annual_rate,by = join_by(year)) %>%
-  mutate(seasonal_idx = (national_avg_rate/national_annual_avg_rate))
-
-#cache results
-saveRDS(seasonal_index,"build/cache/hotel_costs.rds")
-
-#Plotting - it doesn't matter much
-ggplot(seasonal_index,aes(x=measure_date)) +
-  geom_line(aes(y=national_avg_rate),color="blue") +
-  annotate(geom = "text",x=as_date("2022-06-01"),y=115,label="GSA per diem",color="blue") +
-  geom_line(aes(y=seasonal_ahla),color="darkorange") +
-  annotate(geom = "text",x=as_date("2022-06-01"),y=153,label="Seasonal AHLA",color="darkorange") +
-  labs(x=NULL,y="Dollars")
-
-ggplot(monthly_data,aes(x=factor(month),y=lodging_rate)) +
-  geom_boxplot(outlier.shape = NA) +
-  ylim(c(NA,150))

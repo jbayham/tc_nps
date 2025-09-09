@@ -46,7 +46,6 @@ final_airports <- cleaned %>%
   ) %>%
   arrange(desc(avg_originating))
 
-write_csv(final_airports,"~/Downloads/airport_list.csv")
 
 #Link back to spatial data and generate final list of airports
 airport_geo <- read_csv("build/inputs/airports/NTAD_Aviation_Facilities_7163558772200366310.csv") %>%

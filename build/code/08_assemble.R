@@ -1,7 +1,7 @@
 #This script assembles the dataset for the cell TCM
 
 library(pacman)
-p_load(tidyverse,conflicted,readxl,arrow)
+p_load(tidyverse,conflicted,janitor,readxl,arrow)
 
 source("project_init.R")
 
@@ -66,18 +66,16 @@ airfare_df <- read_csv("build/cache/airfares.csv") %>%
   mutate(fly_time = nsmiles/528) #distance divided by speed of plane
 
 #Hotel costs
-hotel_costs_df <- readRDS("build/cache/hotel_costs.rds") %>%
-  select(measure_date,seasonal_ahla)
+# hotel_costs_df <- readRDS("build/cache/hotel_costs.rds") %>%
+#   select(measure_date,seasonal_ahla)
 
 #Rental car prices
-rental_car_df <- read_csv("build/inputs/rental_car_price.csv") %>%
-  clean_names() %>%
-  select(iata,daily_rental_cost=daily_price)
+rental_car_df <- readRDS("build/cache/rental_car_prices.csv")
+  #select(iata,daily_rental_cost=daily_price)
 
 #Parking fees
-parking_cost_df <- read_csv("build/inputs/airport_parking_costs.csv") %>%
-  clean_names() %>%
-  select(iata,daily_parking_cost=x1_day_parking_cost)
+parking_cost_df <- readRDS("build/cache/parking_prices.csv")
+  #select(iata,daily_parking_cost=daily_price)
 
 ##############################
 #Cost params
@@ -85,9 +83,14 @@ wage_frac = 1/3
 work_hours = 40*51 #51 40-hour weeks
 AAA <- c(`2022` = 0.2767,
          `2023` = 0.2576)
-
-parking_cost_others <- summarize(parking_cost_df,cost=mean(daily_parking_cost,na.rm=T)) %>% pull(cost)
-rental_car_others <- summarize(rental_car_df,cost=mean(daily_rental_cost,na.rm=T)) %>% pull(cost)
+hotel_rate = c(`2019` = 131.56,
+               `2020` = 103.28,
+               `2021` = 124.71,
+               `2022` = 149.5,
+               `2023` = 155.94,
+               `2024` = 159) #from https://www.ahla.com/sites/default/files/25_SOTI.pdf
+#parking_cost_others <- summarize(parking_cost_df,cost=mean(daily_parking_cost,na.rm=T)) %>% pull(cost)
+#rental_car_others <- summarize(rental_car_df,cost=mean(daily_rental_cost,na.rm=T)) %>% pull(cost)
 
 
 
@@ -127,7 +130,7 @@ travel_cost_calc <- function(pk,
   #Setting cost params that vary by year
   d_tc = AAA[as.character(park_temp$year[1])]
   #f_tc = fly_USDpermile[as.character(park_temp$year[1])]
-  hr = hotelrate[as.character(park_temp$year[1])]
+  hr = hotel_rate[as.character(park_temp$year[1])]
   fee_type=park_temp$fee_type[1]
   site_fee=park_temp$site_fee[1]
 
@@ -171,10 +174,10 @@ travel_cost_calc <- function(pk,
     arrange(measure_date,tract) 
   
   #Calculating a seasonally adjusted hotel rate based on when people visited
-  hotel_rate_adj <- hotel_costs_df %>%
-    inner_join(select(visitors_time,measure_date),by = join_by(measure_date)) %>%
-    summarize(hr=mean(seasonal_ahla,na.rm=T)) %>%
-    pull()
+  # hotel_rate_adj <- hotel_costs_df %>%
+  #   inner_join(select(visitors_time,measure_date),by = join_by(measure_date)) %>%
+  #   summarize(hr=mean(seasonal_ahla,na.rm=T)) %>%
+  #   pull()
   
   #Aggregating visits across time
   visitors <- visitors_time %>%
@@ -199,19 +202,17 @@ travel_cost_calc <- function(pk,
                by=c("airport2_code"),relationship = "many-to-many") %>%
     left_join(census_xwalk, by = "tract") %>%
     left_join(nsplit_param,by = c("code_dest","tract")) %>%
-    left_join(parking_cost_df,by=c("airport1_code"="iata")) %>%
-    left_join(rental_car_df,by=c("airport2_code"="iata")) %>%
+    left_join(parking_cost_df,by=c("airport1_code"="airport_code")) %>%
+    left_join(rental_car_df,by=c("airport2_code"="airport_code")) %>%
     mutate(
-      daily_parking_cost = ifelse(is.na(daily_parking_cost),parking_cost_others,daily_parking_cost),
-      daily_rental_cost = ifelse(is.na(daily_rental_cost),rental_car_others,daily_rental_cost),
       wage_rate = income / work_hours,
       cost_opp_hr = wage_frac * wage_rate,
       travel_time = duration_hr1 + duration_hr3, # + fly_time,
-      cost_hotel = 2*floor(travel_time / 12) * hotel_rate_adj, #hotel stays for long trips assuming 12 hour travel days
+      cost_hotel = 2*floor(travel_time / 12) * hr, #hotel stays for long trips assuming 12 hour travel days
       cost_time = 2 * (cost_opp_hr * (travel_time + fly_time + 2)),
       cost_drive = 2 * (distance_mi1 + distance_mi3) * d_tc/nsplit,
       cost_fly = 2 * fare,
-      cost_park_rent = 3 * (daily_parking_cost + daily_rental_cost),
+      cost_park_rent = 3 * (parking_price_daily + rental_price_daily),
       total_flight_cost = cost_drive + cost_time + cost_fly + cost_hotel + cost_park_rent
     )
   
@@ -253,7 +254,7 @@ travel_cost_calc <- function(pk,
   reg_final <- reg_data %>%
     filter(!if_any(everything(),list(is.na,is.nan))) %>%
     mutate(cost_opp = wage_frac*(income/work_hours), #opportunity cost of time $/hour
-           cost_hotel = 2*floor(osrm_ow_hrs / 12) * hotel_rate_adj, #hotel stays for long trips assuming 12 hour driving days
+           cost_hotel = 2*floor(osrm_ow_hrs / 12) * hr, #hotel stays for long trips assuming 12 hour driving days
            cost_d_opp = 2*(cost_opp*osrm_ow_hrs),  #travel cost = 1/3 hourly wage (annual salary = hh_inc/2000) + .59 * miles; round trip so 2x mileage
            cost_d_travel = 2*d_tc*osrm_ow_miles/nsplit,  #multiplying by 2 for round trip; without opportunity cost of time
            cost_d_total = cost_d_opp + cost_d_travel + cost_hotel,

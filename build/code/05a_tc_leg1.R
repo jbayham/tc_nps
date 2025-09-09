@@ -81,3 +81,36 @@ process_airport <- function(airport_row) {
 
 # Run the process
 walk(split(airports_geo, seq(nrow(airports_geo))), process_airport)
+
+
+#####################################
+#Read in the whole dataset and reorganize it by airport
+
+leg1_ds <- open_dataset("build/cache/fly/tract_leg1")
+
+
+all_dat <- leg1_ds %>%
+  collect()
+
+#keep top 10 nearest airports to each tract
+tract_top10 <- all_dat %>%
+  group_by(tract) %>%
+  slice_min(order_by = distance_mi,n=10,with_ties = FALSE) %>%
+  ungroup()
+
+saveRDS(tract_top10,"build/cache/tract_to_airpot10.rds")
+
+######
+leg1_ds <- open_dataset("build/cache/fly/zip_leg1")
+
+
+all_dat <- leg1_ds %>%
+  collect()
+
+#keep top 10 nearest airports to each tract
+zip_top10 <- all_dat %>%
+  group_by(zip) %>%
+  slice_min(order_by = distance_mi,n=10,with_ties = FALSE) %>%
+  ungroup()
+
+saveRDS(zip_top10,"build/cache/zip_to_airpot10.rds")

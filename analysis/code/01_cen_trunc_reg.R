@@ -10,7 +10,7 @@ source("project_init.R")
 #Parks reference
 park_subset <- readRDS("build/cache/park_subset.rds") %>%
   filter(primary==1)
-m_names <- park_subset$code_dest
+#m_names <- park_subset$code_dest
 
 yr_list = c(2019:2023)
 yr=yr_list[1]
@@ -20,11 +20,18 @@ for(yr in yr_list){
 #f_names <- list.files("analysis/inputs/compare_reg/nopred",full.names = TRUE) 
 f_names <- list.files(paste0("analysis/inputs/date_",yr,"-08-01"),full.names = TRUE) 
 
-
+# Read in all park data
 df_list <- map(f_names,function(x){
   readRDS(x)
 }) 
 
+#Get model names
+m_names <- df_list %>%
+  map_chr(function(x){
+    if(nrow(x)==0) return(NA)
+    unique(x$code_dest)
+  }) %>%
+  na.omit()
 
 #Create dir to hold obs counts for each model
 #coef_dir_name=paste0("analysis/cache/regs_nopred")
@@ -37,8 +44,8 @@ dir_ifnot(bs_dir_name)
 
 ###########
 #Start
-df=df_list[[1]]
-nm=m_names[1]
+df=df_list[[31]]
+nm=m_names[31]
 walk2(df_list,
       m_names,
       function(df,nm){
@@ -61,16 +68,15 @@ walk2(df_list,
         
         #Define covariate vector
         c_names <- c("cost_total_weighted","income","age","householdsize","residing")
-        #c_names <- c("cost_total_weighted","age","householdsize","residing")
-        
-        xmat = as.matrix(cbind(1, df[,c_names]))
+
+        xmat = as.matrix(cbind(1, df[,c_names[c_names %in% names(df)]]))
         yvec = df$visits 
-        start_beta <- c(0, rep(0,length(c_names))) # Starting values for the optimization
+        start_beta <- c(0, rep(0,length(c_names)),1) # Starting values for the optimization
         
         
         # Fit the full model
         model_fit <- optim(par = start_beta, 
-                           fn = poi_cen_trunc_ll, 
+                           fn = nb_cen_trunc_ll, 
                            y = yvec, 
                            X = xmat, 
                            lower_trunc = 1,
@@ -79,19 +85,30 @@ walk2(df_list,
                            control = list(maxit = 3000),
                            hessian = F)
         
+        
         if(model_fit$convergence %in% c(0,10)){
           coefs = model_fit$par
-          names(coefs) <- c("constant",c_names)
+          if(length(coefs)==(length(c_names)+1)){
+            names(coefs) <- c("constant",c_names)
+          } else if(length(coefs)==(length(c_names)+2)){
+            names(coefs) <- c("constant",c_names,"ltheta")
+          }          
           saveRDS(coefs,coef_fname)
         } 
         
+        
         # Run bootstrap for standard errors
-        bootstrap_estimation_par(X = xmat,
-                                 y = yvec,
-                                 max_iter = 2000,
-                                 start_boot = 1,
-                                 n_boot = 500,
-                                 output_dir = bs_run_dir)
+        bootstrap_estimation(X = xmat,
+                             y = yvec, 
+                             max_iter = 2000,
+                             start_boot = 1,
+                             n_boot = 500,
+                             output_dir = bs_run_dir,
+                             nm = nm,
+                             c_names = c_names,
+                             parallel = T,
+                             workers = 4
+                             )
         
         #Read in all runs, row_bind and cache
         bs_runs <- list.files(bs_run_dir,full.names = T) %>%
@@ -107,13 +124,10 @@ walk2(df_list,
 }
 ###################
 
-# check <- list.files("analysis/cache/bs_runs/EVER",full.names = T) %>%
-#   map(readRDS) %>%
-#   bind_rows() 
-# 
-# hist(check[,2])
-# 
-# check_mean = summarize(check,across(everything(),mean))
-# 
-# check
-# 1/check[1,2]
+
+hist(bs_runs[,2])
+
+check_mean = summarize(bs_runs,across(everything(),mean))
+
+check_mean
+1/check_mean[1,2]

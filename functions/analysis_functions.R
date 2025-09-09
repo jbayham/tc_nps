@@ -31,6 +31,41 @@ poi_cen_trunc_ll <- function(beta, #vector of coefficients
   return(-sum(ll))  # Return negative log-likelihood for minimization
 }
 
+# Negative Binomial log-likelihood with truncation and censoring
+nb_cen_trunc_ll <- function(par,        # c(beta, log_theta)
+                            X,          # Design matrix
+                            y,          # Observed (possibly censored) outcomes
+                            lower_trunc = 1,
+                            lower_censor = 4) {
+  
+  # Separate coefficients and dispersion
+  p <- ncol(X)
+  beta <- par[1:p]
+  log_theta <- par[p + 1]
+  theta <- exp(log_theta)  # Ensure positivity
+  
+  mu <- exp(X %*% beta)  # Mean of NB distribution
+  
+  ll <- numeric(length(y))
+  
+  for (i in seq_along(y)) {
+    # Probability that true y > lower_trunc (for truncation correction)
+    p_trunc <- pnbinom(lower_trunc, size = theta, mu = mu[i])
+    
+    if (y[i] > lower_censor) {
+      # Fully observed: standard NB pmf
+      ll[i] <- dnbinom(y[i], size = theta, mu = mu[i], log = TRUE) - log(1 - p_trunc)
+    } else if (y[i] == lower_censor) {
+      # Censored: sum probability from (lower_trunc+1):lower_censor
+      p_cens <- pnbinom(lower_censor, size = theta, mu = mu[i]) - p_trunc
+      ll[i] <- log(p_cens) - log(1 - p_trunc)
+    }
+  }
+  
+  return(-sum(ll))  # Negative log-likelihood for minimization
+}
+
+
 # Function to perform bootstrap
 bootstrap_estimation <- function(X, #Design matrix
                                  y, #dependent variable (e.g., trips)
@@ -67,7 +102,7 @@ bootstrap_estimation <- function(X, #Design matrix
     # Refit the model using Nelder-Mead
     fit <- optim(
       par = start_beta,
-      fn = poi_cen_trunc_ll,
+      fn = nb_cen_trunc_ll,
       X = as.matrix(X_boot),
       y = y_boot,
       method = "Nelder-Mead",
@@ -77,7 +112,7 @@ bootstrap_estimation <- function(X, #Design matrix
     # Store the coefficients if model converges
     if (fit$convergence == 0) {
       result <- data.frame(t(fit$par))
-      colnames(result) <- c("constant",c_names)
+      colnames(result) <- c("constant",c_names,"ltheta")
       saveRDS(result, file = file.path(output_dir, paste0("bootstrap_iter_", b, ".rds")))
     }
   }
@@ -123,14 +158,14 @@ bootstrap_estimation_par <- function(X, #Design matrix
                 # Resample data
                 c_names <- c("cost_total_weighted","income","age","householdsize","residing")
                 #c_names <- c("cost_total_weighted","age","householdsize","residing")
-                start_beta <- rep(0,ncol(X))
+                start_beta <- rep(0,ncol(X),1)
                 X_boot <- X[boot_indices, , drop = FALSE]
                 y_boot <- y[boot_indices]
                 
                 # Refit the model using Nelder-Mead
                 fit <- optim(
                   par = start_beta,
-                  fn = poi_cen_trunc_ll,
+                  fn = nb_cen_trunc_ll,
                   X = as.matrix(X_boot),
                   y = y_boot,
                   method = "Nelder-Mead",
@@ -155,6 +190,88 @@ bootstrap_estimation_par <- function(X, #Design matrix
     n_boot = (target_runs - num_runs)/suc_rate
     
   }
+}
+
+
+bootstrap_estimation <- function(X, 
+                                 y, 
+                                 start_boot = 1, 
+                                 n_boot = 10, 
+                                 output_dir = "analysis/cache/bs_runs", 
+                                 nm = NULL, 
+                                 c_names = NULL, 
+                                 max_iter = 2000, 
+                                 parallel = FALSE, 
+                                 workers = 4
+                                 ) {
+  # Dependencies
+  require(fs)
+  require(progress)
+  if (parallel) {
+    require(furrr)
+    plan("multisession", workers = workers)
+  }
+  
+  # Input checks
+  stopifnot(is.matrix(X), is.numeric(y), length(y) == nrow(X))
+  if (is.null(c_names)) {
+    c_names <- colnames(X)
+    if (is.null(c_names)) stop("Please provide `c_names` or use a matrix with named columns.")
+  }
+  
+  dir_ifnot(output_dir)
+
+  
+  # Define single bootstrap iteration
+  bootstrap_loop <- function(b) {
+    file_path <- file.path(output_dir, paste0("bootstrap_iter_", b, ".rds"))
+    if (file.exists(file_path)) return(NULL)
+    
+    set.seed(b)
+    boot_indices <- sample(seq_along(y), size = length(y), replace = TRUE)
+    X_boot <- X[boot_indices, , drop = FALSE]
+    y_boot <- y[boot_indices]
+    
+    start_beta <- c(0, rep(0,length(c_names)),1) # Starting values for the optimization
+    
+    
+    model_fit <- try(
+      optim(par = start_beta,
+            fn = nb_cen_trunc_ll,
+            y = y_boot,
+            X = X_boot,
+            lower_trunc = 1,
+            lower_censor = 4,
+            method = "Nelder-Mead",
+            control = list(maxit = max_iter),
+            hessian = FALSE),
+      silent = TRUE
+    )
+    
+    if (!inherits(model_fit, "try-error") && model_fit$convergence == 0) {
+      result <- data.frame(t(model_fit$par))
+      colnames(result) <- if (length(model_fit$par) == length(c_names) + 1) {
+        c("constant", c_names)
+      } else {
+        c("constant", c_names, "ltheta")
+      }
+      saveRDS(result, file = file_path)
+    }
+  }
+  
+  # Execute bootstrap loop
+  boots <- start_boot:(start_boot + n_boot)
+  if (parallel) {
+    furrr::future_walk(boots, bootstrap_loop, .options = furrr_options(seed = TRUE), .progress = TRUE)
+  } else {
+    pb <- progress_bar$new(format = " [:bar] :percent eta: :eta", total = length(boots), clear = FALSE, width = 60)
+    for (b in boots) {
+      bootstrap_loop(b)
+      pb$tick()
+    }
+  }
+  
+  invisible(NULL)
 }
 
 

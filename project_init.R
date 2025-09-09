@@ -28,11 +28,11 @@ run.script("functions")
 #to create a symbolic link to the inputs folder that may be shared across several users
 comp = Sys.info()
 
-if(comp["nodename"]=="Judes-MBP-2"){
-  folder.setup(slink="")#local setup
-} else {
+if(comp["nodename"]=="darecompute-02"){
   folder.setup(slink="/RSTOR/bayham/projects/tc_nps/inputs")
   setwd("/data/jbuser/git_projects/tc_nps/")
+} else {
+  folder.setup(slink="")#local setup
 }
 
 

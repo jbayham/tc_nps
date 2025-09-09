@@ -24,7 +24,7 @@ census_xwalk <- bind_rows(xwalk_data,census_data) %>%
 
 
 #Analysis dataset
-reg_dat <- list.files("analysis/inputs/compare_reg",full.names = TRUE) %>%
+reg_dat <- list.files("analysis/inputs/regs_dem",full.names = TRUE) %>%
   map(function(x){
     readRDS(x)
   })  
@@ -37,7 +37,7 @@ rep_dat <- reg_dat %>%
          total_pop = total_pop/100,
          st_fips = factor(str_sub(tract,1,2)))
 
-
+#Subsetting entire tract metrics for each site
 rep_dat_all <- reg_dat %>%
   map(function(df){
     tract_sub <- tract_devices %>%
@@ -51,11 +51,23 @@ rep_dat_all <- reg_dat %>%
    return(tract_sub)
   }) %>%
   bind_rows() %>%
+  distinct(tract,year,residing) %>%
   inner_join(census_xwalk,by="tract") %>%
   mutate(across(c(income),~./1000),
          total_pop = total_pop/100,
-         st_fips = factor(str_sub(tract,1,2)))
-  
+         st_fips = factor(str_sub(tract,1,2))) 
+
+#2022 and 2023 summer rep
+rep_all <- tract_devices %>%
+  filter(year %in% c(2022,2023),
+         mon %in% c(6,7)) %>%
+  group_by(tract) %>%
+  summarize(residing=mean(residing,na.rm = T)) %>%
+  ungroup() %>%
+  inner_join(census_xwalk,by="tract") %>%
+  mutate(across(c(income),~./1000),
+         total_pop = total_pop/100,
+         st_fips = factor(str_sub(tract,1,2))) 
 
 
 
@@ -71,66 +83,48 @@ datasummary(residing + total_pop + age + income + householdsize ~ Mean + SD + Mi
             )
 
 #Is there any correlation with demographics
-# static_model <- lm(residing ~ total_pop + med_age + med_hh_inc + bach_degree_perc + white_perc,
-#                       data = tract_devices_sub)
-# 
-# summary(static_model)
-# 
-# #modelsummary parameters
-# options("modelsummary_format_numeric_latex" = "plain")
-# cf_map = c("total_pop"="Population","med_age"="Med. Age","med_hh_inc"="Med. Inc. ($1000)","bach_degree_perc"="% Bachelors","white_perc"="% White")
-# modelsummary(list(Devices=static_model),
-#              output="latex",
-#              fmt=2,
-#              stars = TRUE,
-#              statistic = "[{conf.low}, {conf.high}]",
-#              coef_map = cf_map,
-#              gof_map = c("nobs"),
-#              align = c("lc")) 
+# ols_sample <- feols(residing ~ total_pop + age + income + householdsize,
+#                    data = rep_dat)
 
-fe_sample <- feols(residing ~ total_pop + age + income + householdsize | st_fips,
+fe_sample <- feols(residing ~ total_pop + age + income + householdsize,
                   data = rep_dat)
 
-fe_all <- feols(residing ~ total_pop + age + income + householdsize | st_fips + year,
-                  data = rep_dat_all)
+fe_all <- feols(residing ~ total_pop + age + income + householdsize,
+                  data = rep_all)
 
-etable(fe_model,fe_all)
+etable(fe_sample,fe_all)
+tab_out
+write_csv(tab_out,"analysis/outputs/rep_reg.csv")
+modelsummary(list(fe_sample,fe_all),stars = TRUE,
+             output = "analysis/outputs/rep_reg.xlsx")
 
 
 
+
+
+
+
+############################################
 #modelsummary parameters
-options("modelsummary_format_numeric_latex" = "plain")
-glance_custom.fixest <- function(x, ...) {
-  tibble::tibble(`FE Num.` = paste(x$fixef_sizes, collapse = " + "))
-}
-cf_map = c("total_pop"="Population (100s)","med_age"="Med. Age","med_hh_inc"="Med. Inc. ($1000)","bach_degree_perc"="% Bachelors","white_perc"="% White")
-modelsummary(list(Devices=fe_model),
-             output="latex",
-             fmt=2,
-             stars = TRUE,
-             #statistic = "[{conf.low}, {conf.high}]",
-             coef_map = cf_map,
-             gof_map = c("nobs","FE Num."),
-             align = c("lc")) 
 
 #Plot of mobile device representativeness  
-overall_mean = tract_devices_sub %>%
-  mutate(frac = residing/total_pop) %>%
+overall_mean = rep_dat %>%
+  mutate(frac = residing/(total_pop*100)) %>%
   filter(between(frac,0,.2)) %>%
   summarize(frac_sum=mean(frac,na.rm = TRUE)) %>%
   pull()
 
-tract_devices_sub %>%
-  mutate(frac = residing/total_pop,
-         state_code = str_sub(tract,1,2)) %>%
+rep_dat %>%
+  mutate(frac = residing/(total_pop*100),
+         state_code = str_sub(tract,1,2)) %>% 
   left_join(tigris::fips_codes %>%  distinct(state_code,state_name),by="state_code") %>% 
-  left_join(tract_devices_sub %>% count(state_code=str_sub(tract,1,2))) %>%
-  ggplot(aes(x=frac,y=reorder(state_name,n))) +
-  geom_boxplot(size=.2) +
+  #left_join(rep_dat %>% count(state_code=str_sub(tract,1,2))) %>%
+  ggplot(aes(x=frac,y=reorder(state_name,frac))) +
+  geom_boxplot(size=.2,outlier.alpha = .2) +
   #geom_violin() +
-  geom_label(aes(label = n,x=-.01),label.size=NA,size=3,family = "serif") +
+  #geom_label(aes(label = n,x=-.01),label.size=NA,size=3,family = "serif") +
   geom_vline(xintercept = overall_mean,linetype="dashed") +
-  xlim(-.015,.2) +
+  xlim(0,.2) +
   theme_bw(base_size = 10) +
   theme(text = element_text(family = "serif")) +
   labs(y=NULL,x="Devices/Population")

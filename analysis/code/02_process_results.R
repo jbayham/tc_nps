@@ -97,7 +97,70 @@ for(m_choice in all_models){
 
 }
 
+#############################
+#Convert AE models to modelsummary
 
 
+##############################
+
+temp_mod <- readRDS("build/inputs/AE/Reg_TCM_Poisson/AZRU_bronze.rds")
+
+modelsummary(temp_mod)
+i="bronze"
+all_mods <- map(c("bronze","silver","gold"),function(i){
+  temp_dat <- list.files("build/inputs/AE/Reg_TCM_Poisson",pattern = paste0(i,".rds"),full.names = TRUE) %>%
+    map(function(x){
+      temp_mod <- readRDS(x) 
+      mname <- str_extract(x, paste0("(?<=/)[^/]+(?=\\_",i,".rds)"))
+      return(list(temp_mod,mname))
+    }) 
+})
+
+#NPS Zonal
+mods <- map(all_mods[[1]],1)
+names(mods) <- map_chr(all_mods[[1]],2)
+
+modelsummary(mods,
+             stars = T,
+             coef_map = c("cost_total_weighted_silverbronze"="Travel Cost",
+                          "census_income"="Income",
+                          "census_age"="Age",
+                          "census_householdsize"="Household Size",
+                          "census_pop"="Population",
+                          "(Intercept)"="Constant"),
+             gof_map = "nobs",
+             output = paste0("analysis/outputs/reg_tab_NPS_Zonal.xlsx"))
+
+#NPS Ind ACS
+mods <- map(all_mods[[2]],1)
+names(mods) <- map_chr(all_mods[[2]],2)
+
+modelsummary(mods,
+             stars = T,
+             coef_map = c("cost_total_weighted_silverbronze"="Travel Cost",
+                          "census_income"="Income",
+                          "census_age"="Age",
+                          "census_householdsize"="Household Size",
+                          "census_pop"="Population",
+                          "(Intercept)"="Constant"),
+             gof_map = "nobs",
+             output = paste0("analysis/outputs/reg_tab_NPS_Ind_ACS.xlsx"))
+
+#NPS Ind
+mods <- map(all_mods[[3]],1)
+names(mods) <- map_chr(all_mods[[3]],2)
+modelsummary(mods[[1]])
+
+modelsummary(mods,
+             stars = T,
+             coef_map = c("cost_total_weighted_gold"="Travel Cost",
+                          "indvl_income_noNAs"="Income",
+                          "indvl_age_noNAs"="Age",
+                          "indvl_householdsize_noNAs"="Household Size",
+                          "(Intercept)"="Constant"),
+             gof_map = "nobs",
+             output = paste0("analysis/outputs/reg_tab_NPS_Ind.xlsx"))
+
+  
 
 

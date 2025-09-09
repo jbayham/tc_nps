@@ -1,7 +1,7 @@
 #This script assembles the dataset for the cell TCM
 
 library(pacman)
-p_load(tidyverse,conflicted,janitor,readxl,arrow)
+p_load(tidyverse,conflicted,janitor,readxl,arrow,janitor)
 
 source("project_init.R")
 
@@ -77,6 +77,9 @@ rental_car_df <- readRDS("build/cache/rental_car_prices.csv")
 parking_cost_df <- readRDS("build/cache/parking_prices.csv")
   #select(iata,daily_parking_cost=daily_price)
 
+#Days on location
+loc_days <- read_csv("build/inputs/AE/n_locdays.csv")
+
 ##############################
 #Cost params
 wage_frac = 1/3
@@ -89,9 +92,6 @@ hotel_rate = c(`2019` = 131.56,
                `2022` = 149.5,
                `2023` = 155.94,
                `2024` = 159) #from https://www.ahla.com/sites/default/files/25_SOTI.pdf
-#parking_cost_others <- summarize(parking_cost_df,cost=mean(daily_parking_cost,na.rm=T)) %>% pull(cost)
-#rental_car_others <- summarize(rental_car_df,cost=mean(daily_rental_cost,na.rm=T)) %>% pull(cost)
-
 
 
 
@@ -127,12 +127,18 @@ travel_cost_calc <- function(pk,
       select(code,code_dest,park,placekey,site_fee,fee_type,year,drange)
   }
   
+  #Joining location days to park data
+  park_temp <- select(loc_days,parkcode,n_locdays_median) %>%
+  left_join(park_temp,.,by=c("code_dest"="parkcode")) %>%
+  mutate(n_locdays_median=coalesce(n_locdays_median,1))
+  
   #Setting cost params that vary by year
   d_tc = AAA[as.character(park_temp$year[1])]
   #f_tc = fly_USDpermile[as.character(park_temp$year[1])]
   hr = hotel_rate[as.character(park_temp$year[1])]
   fee_type=park_temp$fee_type[1]
   site_fee=park_temp$site_fee[1]
+  site_loc_days = park_temp$n_locdays_median[1]
 
   
   #Setting date params based on SEM range or for all dates
@@ -173,12 +179,6 @@ travel_cost_calc <- function(pk,
            measure_date %within% date_range) %>% #cutting data by date range
     arrange(measure_date,tract) 
   
-  #Calculating a seasonally adjusted hotel rate based on when people visited
-  # hotel_rate_adj <- hotel_costs_df %>%
-  #   inner_join(select(visitors_time,measure_date),by = join_by(measure_date)) %>%
-  #   summarize(hr=mean(seasonal_ahla,na.rm=T)) %>%
-  #   pull()
-  
   #Aggregating visits across time
   visitors <- visitors_time %>%
     group_by(placekey,tract) %>%
@@ -212,7 +212,7 @@ travel_cost_calc <- function(pk,
       cost_time = 2 * (cost_opp_hr * (travel_time + fly_time + 2)),
       cost_drive = 2 * (distance_mi1 + distance_mi3) * d_tc/nsplit,
       cost_fly = 2 * fare,
-      cost_park_rent = 3 * (parking_price_daily + rental_price_daily),
+      cost_park_rent = site_loc_days * (parking_price_daily + rental_price_daily),
       total_flight_cost = cost_drive + cost_time + cost_fly + cost_hotel + cost_park_rent
     )
   

@@ -31,6 +31,7 @@ walk(links, ~{
   if (!file.exists(destfile)) download.file(.x, destfile, mode = "wb")
 })
 
+##########################################
 # Function to extract lodging rates from each file
 read_per_diem <- function(file) {
   df <- read_excel(file, .name_repair = janitor::make_clean_names) |>
@@ -54,7 +55,8 @@ monthly_data <- all_data |>
     year = as.integer(fiscal_year)
   )
 
-
+##########################
+# Fixed effects model to estimate lodging rates by year and zip code
 fe_mod <- feols(lodging_rate ~ factor(month) | year + zip,
                 data = monthly_data)
 
@@ -84,5 +86,48 @@ as.data.frame(fes$zip) %>%
 ggsave("analysis/outputs/gsa_rates_zip.png")
 
 sum(fes$zip<0)/length(fes$zip)
+
+##################################
+# Summarize national average lodging rate by year and month
+avg_by_year_month <- monthly_data |>
+  filter(!is.na(lodging_rate), is.numeric(lodging_rate)) |>
+  group_by(year, month, measure_date = make_date(year, month, 1)) |>
+  summarise(national_avg_rate = mean(lodging_rate, na.rm = TRUE), .groups = "drop")
+
+
+
+#Construct annual average to deduct from monthly
+annual_rate <- monthly_data %>%
+  filter(!is.na(lodging_rate), is.numeric(lodging_rate)) |>
+  group_by(year) |>
+  summarise(national_annual_avg_rate = mean(lodging_rate, na.rm = TRUE), .groups = "drop") %>%
+  add_column(ahla = c(149.5,155.94,159,162.16)) # from https://www.ahla.com/sites/default/files/25_SOTI.pdf
+
+#Create seasonal ahla adjustment
+seasonal_index <- avg_by_year_month %>%
+  inner_join(annual_rate,by = join_by(year)) %>%
+  mutate(seasonal_idx = (national_avg_rate - national_annual_avg_rate)) %>%
+  group_by(month) %>%
+  summarize(seasonal_idx = mean(seasonal_idx),.groups="drop")
+
+#cache results
+saveRDS(seasonal_index,"build/cache/hotel_costs.rds")
+
+#Plot the seasonal variation around the national avg rate
+ggplot(seasonal_index,aes(x=measure_date)) +
+  geom_line(aes(y=national_avg_rate),color="blue") +
+  annotate(geom = "text",x=as_date("2022-06-01"),y=115,label="GSA per diem",color="blue") +
+  geom_line(aes(y=national_annual_avg_rate),color="darkorange") +
+  annotate(geom = "text",x=as_date("2022-06-01"),y=153,label="Seasonal AHLA",color="darkorange") +
+  labs(x=NULL,y="Dollars")
+
+
+#Plotting - it doesn't matter much
+ggplot(seasonal_index,aes(x=measure_date)) +
+  geom_line(aes(y=national_avg_rate),color="blue") +
+  annotate(geom = "text",x=as_date("2022-06-01"),y=115,label="GSA per diem",color="blue") +
+  geom_line(aes(y=seasonal_ahla),color="darkorange") +
+  annotate(geom = "text",x=as_date("2022-06-01"),y=153,label="Seasonal AHLA",color="darkorange") +
+  labs(x=NULL,y="Dollars")
 
 

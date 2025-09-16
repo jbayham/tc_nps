@@ -129,12 +129,11 @@ travel_cost_calc <- function(pk,
   
   #Joining location days to park data
   park_temp <- select(loc_days,parkcode,n_locdays_median) %>%
-  left_join(park_temp,.,by=c("code_dest"="parkcode")) %>%
-  mutate(n_locdays_median=coalesce(n_locdays_median,1))
+    left_join(park_temp,.,by=c("code_dest"="parkcode")) %>%
+    mutate(n_locdays_median=coalesce(n_locdays_median,1))
   
   #Setting cost params that vary by year
   d_tc = AAA[as.character(park_temp$year[1])]
-  #f_tc = fly_USDpermile[as.character(park_temp$year[1])]
   hr = hotel_rate[as.character(park_temp$year[1])]
   fee_type=park_temp$fee_type[1]
   site_fee=park_temp$site_fee[1]
@@ -244,12 +243,6 @@ travel_cost_calc <- function(pk,
   unmatched <- reg_data %>%
     filter(if_any(everything(),list(is.na,is.nan)))
   
-  #choose which income measure to use
-  # if(inc_measure=="med") { #use median household income
-  #   reg_data$income = reg_data$med_hh_inc
-  # } else {
-  #   reg_data$income = reg_data$perc_inc
-  # }
   
   reg_final <- reg_data %>%
     filter(!if_any(everything(),list(is.na,is.nan))) %>%
@@ -276,8 +269,7 @@ travel_cost_calc <- function(pk,
 
 check <- travel_cost_calc(park_code = "AZRU",fly_prob = F)
 summary(select(check[[1]],visits,nsplit,fly_prob,cost_total_weighted))
-# check <- travel_cost_calc(pk = "zzz-222@5qf-fyv-zfz")
-# check <- travel_cost_calc(park_code = "AZRU",dates = (as_date("2019-01-01") %--% as_date("2019-06-30")))
+
 
 ################
 # Define modeling configurations for travel cost calculation

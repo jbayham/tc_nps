@@ -31,168 +31,167 @@ poi_cen_trunc_ll <- function(beta, #vector of coefficients
   return(-sum(ll))  # Return negative log-likelihood for minimization
 }
 
-# Negative Binomial log-likelihood with truncation and censoring
-nb_cen_trunc_ll <- function(par,        # c(beta, log_theta)
-                            X,          # Design matrix
-                            y,          # Observed (possibly censored) outcomes
-                            lower_trunc = 1,
-                            lower_censor = 4) {
+
+
+nb_cen_trunc_ll <- function(par, X, y, lower_trunc = 1, lower_censor = 4) {
   
-  # Separate coefficients and dispersion
+  # Unpack parameters
   p <- ncol(X)
   beta <- par[1:p]
   log_theta <- par[p + 1]
-  theta <- exp(log_theta)  # Ensure positivity
+  theta <- exp(log_theta)
   
-  mu <- exp(X %*% beta)  # Mean of NB distribution
+  # Linear predictor and mean
+  mu <- exp(X %*% beta)
   
+  # Precompute truncation probabilities
+  p_trunc <- pnbinom(lower_trunc, size = theta, mu = mu)
+  log_denom <- log1p(-p_trunc)  # log(1 - p_trunc) = log1p(-p_trunc) for numerical stability
+  
+  # Logical indexing
+  is_observed <- y > lower_censor
+  is_censored <- y == lower_censor
+  
+  # Initialize log-likelihood
   ll <- numeric(length(y))
   
-  for (i in seq_along(y)) {
-    # Probability that true y > lower_trunc (for truncation correction)
-    p_trunc <- pnbinom(lower_trunc, size = theta, mu = mu[i])
-    
-    if (y[i] > lower_censor) {
-      # Fully observed: standard NB pmf
-      ll[i] <- dnbinom(y[i], size = theta, mu = mu[i], log = TRUE) - log(1 - p_trunc)
-    } else if (y[i] == lower_censor) {
-      # Censored: sum probability from (lower_trunc+1):lower_censor
-      p_cens <- pnbinom(lower_censor, size = theta, mu = mu[i]) - p_trunc
-      ll[i] <- log(p_cens) - log(1 - p_trunc)
-    }
+  # Observed (not censored)
+  if (any(is_observed)) {
+    ll[is_observed] <- dnbinom(y[is_observed], size = theta, mu = mu[is_observed], log = TRUE) - 
+      log_denom[is_observed]
   }
   
-  return(-sum(ll))  # Negative log-likelihood for minimization
-}
-
-
-# Function to perform bootstrap
-bootstrap_estimation <- function(X, #Design matrix
-                                 y, #dependent variable (e.g., trips)
-                                 start_boot=1, #Index to start bootstrap since it controls rng seed and file names
-                                 n_boot = 10, #Number of bootstrap runs
-                                 output_dir = "analysis/cache/bs_runs", #directory to save bs runs
-                                 ...) { #Pass in additional arguments
-  require(progress) #for printing progress bar
-  require(fs) #for fast access to file system
-  
-  #Create dir for caching results
-  if(!dir.exists(output_dir)) dir.create(output_dir,recursive = TRUE)
-  
-  #progress bar
-  pb <- progress_bar$new(
-    format = " [:bar] :percent eta: :eta",
-    total = length(start_boot:(start_boot+n_boot)), clear = FALSE, width= 60)
-  
-  #Not all bs runs converge and we only save those that do. This outer loop checks how many have converged and enters a while loop.
-  #num_runs <- length(dir_ls(output_dir, type = "file", recurse = FALSE))
-  #while(n_runs < n_boot)
-  
-  # Perform bootstrap iterations
-  for (b in start_boot:(start_boot+n_boot)) {
-    pb$tick()
-    # Resample indices
-    set.seed(b) #set seed for reproducibility
-    boot_indices <- sample(1:length(y), size = length(y), replace = TRUE)
-    
-    # Resample data
-    X_boot <- X[boot_indices, , drop = FALSE]
-    y_boot <- y[boot_indices]
-    
-    # Refit the model using Nelder-Mead
-    fit <- optim(
-      par = start_beta,
-      fn = nb_cen_trunc_ll,
-      X = as.matrix(X_boot),
-      y = y_boot,
-      method = "Nelder-Mead",
-      control = list(maxit = 2000)
-    )
-    
-    # Store the coefficients if model converges
-    if (fit$convergence == 0) {
-      result <- data.frame(t(fit$par))
-      colnames(result) <- c("constant",c_names,"ltheta")
-      saveRDS(result, file = file.path(output_dir, paste0("bootstrap_iter_", b, ".rds")))
-    }
+  # Censored: sum P(y in (lower_trunc+1):lower_censor)
+  if (any(is_censored)) {
+    p_cens <- pnbinom(lower_censor, size = theta, mu = mu[is_censored]) - 
+      pnbinom(lower_trunc, size = theta, mu = mu[is_censored])
+    ll[is_censored] <- log(p_cens) - log_denom[is_censored]
   }
+  
+  # Return negative log-likelihood for minimization
+  return(-sum(ll))
 }
 
-# Function to perform bootstrap
-bootstrap_estimation_par <- function(X, #Design matrix
-                                     y, #dependent variable (e.g., trips)
-                                     max_iter = 2000, #most converge in 2000
-                                     start_boot=1, #Index to start bootstrap since it controls rng seed and file names
-                                     n_boot = 10, #Number of bootstrap runs
-                                     output_dir = "analysis/cache/bs_runs", #directory to save bs runs
-                                     ...) { #Pass in additional arguments
-  require(progress) #for printing progress bar
-  require(fs) #for fast access to file system
-  require(furrr) #for parallel estimation
+nb_cen_trunc_grad_vec <- function(par, X, y, lower_trunc = 1, lower_censor = 4) {
+  p <- ncol(X)
+  beta <- par[1:p]
+  log_theta <- par[p + 1]
+  theta <- exp(log_theta)
   
-  #Create dir for caching results
-  if(!dir.exists(output_dir)) dir.create(output_dir,recursive = TRUE)
+  mu <- drop(exp(X %*% beta))  # vector of means
   
-  #progress bar
-  # pb <- progress_bar$new(
-  #   format = " [:bar] :percent eta: :eta",
-  #   total = length(start_boot:(start_boot+n_boot)), clear = FALSE, width= 60)
-  # 
+  # Logical indexing
+  is_obs <- y > lower_censor
+  is_cens <- y == lower_censor
   
-  plan(multisession(workers = 10))
+  ### Finite diff epsilon
+  eps <- 1e-6
   
-  #Not all bs runs converge and we only save those that do. This outer loop checks how many have converged and enters a while loop.
-  num_runs=0
-  target_runs=n_boot
-  while(num_runs < target_runs){
+  ### Central diff d loglik / d mu
+  mu_up <- mu + eps
+  mu_dn <- mu - eps
   
-  # Perform bootstrap iterations
-  future_walk(.x = start_boot:(start_boot+n_boot),
-              .options = furrr_options(seed = TRUE),
-              .f = function(b,out_dir){
-                #pb$tick()
-                # Resample indices
-                set.seed(b) #set seed for reproducibility
-                boot_indices <- sample(1:length(y), size = length(y), replace = TRUE)
-                
-                # Resample data
-                c_names <- c("cost_total_weighted","income","age","householdsize","residing")
-                #c_names <- c("cost_total_weighted","age","householdsize","residing")
-                start_beta <- rep(0,ncol(X),1)
-                X_boot <- X[boot_indices, , drop = FALSE]
-                y_boot <- y[boot_indices]
-                
-                # Refit the model using Nelder-Mead
-                fit <- optim(
-                  par = start_beta,
-                  fn = nb_cen_trunc_ll,
-                  X = as.matrix(X_boot),
-                  y = y_boot,
-                  method = "Nelder-Mead",
-                  control = list(maxit = max_iter)
-                )
-                
-                # Store the coefficients if model converges
-                if (fit$convergence %in% c(0,10)) {
-                  result <- data.frame(t(fit$par))
-                  colnames(result) <- c("constant",c_names)
-                  saveRDS(result, file = file.path("/data/jbuser/git_projects/tc_nps",out_dir, paste0("bootstrap_iter_", b, ".rds")))
-                }
-              },.progress = TRUE,
-              out_dir = output_dir)
-    
-    file_list <- dir_ls(output_dir, type = "file", recurse = FALSE)
-    num_runs = length(file_list)
-    
-    start_boot=start_boot+n_boot
-    
-    suc_rate = num_runs/n_boot
-    n_boot = (target_runs - num_runs)/suc_rate
-    
+  # f(y | mu)
+  ll_obs_up <- dnbinom(y[is_obs], mu = mu_up[is_obs], size = theta, log = TRUE)
+  ll_obs_dn <- dnbinom(y[is_obs], mu = mu_dn[is_obs], size = theta, log = TRUE)
+  dlogf_dmu_obs <- (ll_obs_up - ll_obs_dn) / (2 * eps)
+  
+  # censoring numerator
+  p_cens_up <- pnbinom(lower_censor, mu = mu_up[is_cens], size = theta)
+  p_cens_dn <- pnbinom(lower_censor, mu = mu_dn[is_cens], size = theta)
+  p_trunc_up <- pnbinom(lower_trunc, mu = mu_up[is_cens], size = theta)
+  p_trunc_dn <- pnbinom(lower_trunc, mu = mu_dn[is_cens], size = theta)
+  num_up <- p_cens_up - p_trunc_up
+  num_dn <- p_cens_dn - p_trunc_dn
+  # Add guards here:
+  num_up <- pmax(num_up, 1e-12)
+  num_dn <- pmax(num_dn, 1e-12)
+  dlogf_dmu_cens <- (log(num_up) - log(num_dn)) / (2 * eps)
+  
+  # denom (for all)
+  p_trunc_up_all <- pnbinom(lower_trunc, mu = mu + eps, size = theta)
+  p_trunc_dn_all <- pnbinom(lower_trunc, mu = mu - eps, size = theta)
+  # Guard p close to 1
+  p_trunc_up_all <- pmin(p_trunc_up_all, 1 - 1e-8)
+  p_trunc_dn_all <- pmin(p_trunc_dn_all, 1 - 1e-8)
+  dlogdenom_dmu <- (log1p(-p_trunc_up_all) - log1p(-p_trunc_dn_all)) / (2 * eps)
+  
+  # Combine dloglik/dmu
+  dloglik_dmu <- numeric(length(y))
+  dloglik_dmu[is_obs] <- dlogf_dmu_obs - dlogdenom_dmu[is_obs]
+  dloglik_dmu[is_cens] <- dlogf_dmu_cens - dlogdenom_dmu[is_cens]
+  
+  ### Gradient w.r.t beta: chain rule dloglik/dmu * dmu/dbeta = dloglik/dmu * mu * X
+  grad_beta <- crossprod(X, dloglik_dmu * mu)  # p x 1
+  
+  ### Gradient w.r.t. log(theta)
+  theta_up <- theta * exp(eps)
+  theta_dn <- theta * exp(-eps)
+  
+  grad_log_theta <- numeric(length(y))
+  
+  # observed
+  ll_obs_up <- dnbinom(y[is_obs], mu = mu[is_obs], size = theta_up, log = TRUE)
+  ll_obs_dn <- dnbinom(y[is_obs], mu = mu[is_obs], size = theta_dn, log = TRUE)
+  dlogf_dth_obs <- (ll_obs_up - ll_obs_dn) / (2 * eps)
+  
+  denom_up <- pnbinom(lower_trunc, mu = mu[is_obs], size = theta_up)
+  denom_dn <- pnbinom(lower_trunc, mu = mu[is_obs], size = theta_dn)
+  # Guard
+  denom_up <- pmin(denom_up, 1 - 1e-8)
+  denom_dn <- pmin(denom_dn, 1 - 1e-8)
+  dlogdenom_dth_obs <- (log1p(-denom_up) - log1p(-denom_dn)) / (2 * eps)
+  
+  grad_log_theta[is_obs] <- (dlogf_dth_obs - dlogdenom_dth_obs) * theta
+  
+  # censored
+  pc_up <- pnbinom(lower_censor, mu = mu[is_cens], size = theta_up)
+  pc_dn <- pnbinom(lower_censor, mu = mu[is_cens], size = theta_dn)
+  pt_up <- pnbinom(lower_trunc, mu = mu[is_cens], size = theta_up)
+  pt_dn <- pnbinom(lower_trunc, mu = mu[is_cens], size = theta_dn)
+  num_up <- pc_up - pt_up
+  num_dn <- pc_dn - pt_dn
+  num_up <- pmax(num_up, 1e-12)
+  num_dn <- pmax(num_dn, 1e-12)
+  dlogf_dth_cens <- (log(num_up) - log(num_dn)) / (2 * eps)
+  
+  denom_up <- pnbinom(lower_trunc, mu = mu[is_cens], size = theta_up)
+  denom_dn <- pnbinom(lower_trunc, mu = mu[is_cens], size = theta_dn)
+  denom_up <- pmin(denom_up, 1 - 1e-8)
+  denom_dn <- pmin(denom_dn, 1 - 1e-8)
+  dlogdenom_dth_cens <- (log1p(-denom_up) - log1p(-denom_dn)) / (2 * eps)
+  
+  grad_log_theta[is_cens] <- (dlogf_dth_cens - dlogdenom_dth_cens) * theta
+  
+  ### Final gradient
+  grad <- -c(grad_beta, sum(grad_log_theta))  # NEGATIVE log-likelihood gradient
+  
+  return(as.numeric(grad))
+  
+  if (any(!is.finite(grad))) {
+    warning("Non-finite values in gradient")
   }
 }
 
+# Score matrix function
+nb_score_matrix <- function(par, X, y, lower_trunc = 1, lower_censor = 4) {
+  n <- nrow(X)
+  k <- length(par)
+  S <- matrix(NA_real_, nrow = n, ncol = k)
+  
+  for (i in seq_len(n)) {
+    # Gradient contribution for individual i
+    grad_i <- nb_cen_trunc_grad_vec(par, X = X[i, , drop = FALSE], y = y[i],
+                                    lower_trunc = lower_trunc, lower_censor = lower_censor)
+    S[i, ] <- -grad_i  # remove the negative because your grad is -loglik
+  }
+  
+  return(S)
+}
 
+
+
+# Bootstrap estimation function
 bootstrap_estimation <- function(X, 
                                  y, 
                                  start_boot = 1, 
@@ -204,12 +203,20 @@ bootstrap_estimation <- function(X,
                                  parallel = FALSE, 
                                  workers = 4
                                  ) {
+  message(paste0("writing to ",output_dir))
+  
+  local({
   # Dependencies
   require(fs)
   require(progress)
   if (parallel) {
     require(furrr)
-    plan("multisession", workers = workers)
+    # check if running rstudio in interactive mode
+    if (interactive() && Sys.getenv("RSTUDIO") == "1") {
+      plan("multisession", workers = workers)
+    } else {
+      plan("multicore", workers = workers)
+    }
   }
   
   # Input checks
@@ -223,7 +230,7 @@ bootstrap_estimation <- function(X,
 
   
   # Define single bootstrap iteration
-  bootstrap_loop <- function(b) {
+  bootstrap_loop <- function(b,output_dir) {
     file_path <- file.path(output_dir, paste0("bootstrap_iter_", b, ".rds"))
     if (file.exists(file_path)) return(NULL)
     
@@ -256,20 +263,25 @@ bootstrap_estimation <- function(X,
         c("constant", c_names, "ltheta")
       }
       saveRDS(result, file = file_path)
+      
     }
+    rm(modelfit)
+    return(NULL)
   }
   
   # Execute bootstrap loop
   boots <- start_boot:(start_boot + n_boot)
   if (parallel) {
-    furrr::future_walk(boots, bootstrap_loop, .options = furrr_options(seed = TRUE), .progress = TRUE)
+    furrr::future_walk(boots, bootstrap_loop, path_abs(output_dir), .options = furrr_options(seed = TRUE), .progress = F)
   } else {
-    pb <- progress_bar$new(format = " [:bar] :percent eta: :eta", total = length(boots), clear = FALSE, width = 60)
+    #pb <- progress_bar$new(format = " [:bar] :percent eta: :eta", total = length(boots), clear = FALSE, width = 60)
     for (b in boots) {
-      bootstrap_loop(b)
-      pb$tick()
+      bootstrap_loop(b,path_abs(output_dir))
+      #pb$tick()
     }
   }
+  
+  })
   
   invisible(NULL)
 }
@@ -319,6 +331,7 @@ bs_table <- function(reg_coef, #coefficients from the full model
   cs_se = sd(-1/bs_dat[,tc_coef_name],na.rm = TRUE)
   cs_ci = quantile(-1/bs_dat[,tc_coef_name],probs = c(0.025, 0.975),na.rm = TRUE)
   cs_day = cs/visit_ratio
+  #Improved bootstrap function with parallel processing and error handling 
   cs_day_ci = quantile(-1/bs_dat[,tc_coef_name]/visit_ratio,probs = c(0.025, 0.975),na.rm = TRUE)
   
   ti <- data.frame(
